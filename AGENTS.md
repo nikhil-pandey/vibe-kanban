@@ -29,6 +29,11 @@ Do not manually edit shared/types.ts, instead edit crates/server/src/bin/generat
 - Prepare SQLx (remote package, postgres): `pnpm run remote:prepare-db`
 - SQLx prepare manual fallback: from `crates/db` run `DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx migrate run && DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx prepare`, then remove `prepare_db.sqlite`
 - Local NPX build: `pnpm run build:npx` then `pnpm pack` in `npx-cli/`
+- If you hit a SQLx cache error locally, refresh it with:
+  1. `cd crates/db`
+  2. `DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx migrate run`
+  3. `DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx prepare`
+  4. `rm prepare_db.sqlite`
 
 ## Coding Style & Naming Conventions
 - Rust: `rustfmt` enforced (`rustfmt.toml`); group imports by crate; snake_case modules, PascalCase types.
