@@ -820,26 +820,27 @@ pub trait ContainerService {
                 let mut stream = store.history_plus_stream();
                 let mut buffered_lines: Vec<String> = Vec::with_capacity(32);
 
+                fn is_foreign_key_violation(err: &SqlxError) -> bool {
+                    matches!(err, SqlxError::Database(db_err)
+                        if matches!(db_err.code().as_deref(), Some("787") | Some("23503")))
+                }
+
                 async fn flush_logs(
                     pool: &sqlx::SqlitePool,
                     execution_id: Uuid,
                     lines: &mut Vec<String>,
-                ) {
+                ) -> Result<(), SqlxError> {
                     if lines.is_empty() {
-                        return;
+                        return Ok(());
                     }
 
-                    if let Err(e) =
-                        ExecutionProcessLogs::append_log_lines(pool, execution_id, lines).await
-                    {
-                        tracing::error!(
-                            "Failed to append batched log lines for execution {}: {}",
-                            execution_id,
-                            e
-                        );
-                    }
+                    let result =
+                        ExecutionProcessLogs::append_log_lines(pool, execution_id, lines).await;
                     lines.clear();
+                    result
                 }
+
+                let mut stop_streaming = false;
 
                 while let Some(Ok(msg)) = stream.next().await {
                     match &msg {
@@ -851,8 +852,26 @@ pub trait ContainerService {
 
                                     // Flush in small batches to reduce lock contention
                                     if buffered_lines.len() >= 32 {
-                                        flush_logs(&db.pool, execution_id, &mut buffered_lines)
-                                            .await;
+                                        if let Err(e) =
+                                            flush_logs(&db.pool, execution_id, &mut buffered_lines)
+                                                .await
+                                        {
+                                            if is_foreign_key_violation(&e) {
+                                                tracing::warn!(
+                                                    "Execution {} was deleted; stopping log stream",
+                                                    execution_id
+                                                );
+                                                let _ =
+                                                    msg_stores.write().await.remove(&execution_id);
+                                                stop_streaming = true;
+                                                break;
+                                            }
+                                            tracing::error!(
+                                                "Failed to append batched log lines for execution {}: {}",
+                                                execution_id,
+                                                e
+                                            );
+                                        }
                                     }
                                 }
                                 Err(e) => {
@@ -866,7 +885,24 @@ pub trait ContainerService {
                         }
                         LogMsg::SessionId(agent_session_id) => {
                             // Flush pending logs before other operations
-                            flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
+                            if let Err(e) =
+                                flush_logs(&db.pool, execution_id, &mut buffered_lines).await
+                            {
+                                if is_foreign_key_violation(&e) {
+                                    tracing::warn!(
+                                        "Execution {} was deleted; stopping log stream",
+                                        execution_id
+                                    );
+                                    let _ = msg_stores.write().await.remove(&execution_id);
+                                    stop_streaming = true;
+                                    break;
+                                }
+                                tracing::error!(
+                                    "Failed to append batched log lines for execution {}: {}",
+                                    execution_id,
+                                    e
+                                );
+                            }
 
                             // Append this line to the database
                             if let Err(e) = CodingAgentTurn::update_agent_session_id(
@@ -885,7 +921,24 @@ pub trait ContainerService {
                             }
                         }
                         LogMsg::Finished => {
-                            flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
+                            if let Err(e) =
+                                flush_logs(&db.pool, execution_id, &mut buffered_lines).await
+                            {
+                                if is_foreign_key_violation(&e) {
+                                    tracing::warn!(
+                                        "Execution {} was deleted; stopping log stream",
+                                        execution_id
+                                    );
+                                    let _ = msg_stores.write().await.remove(&execution_id);
+                                    stop_streaming = true;
+                                    break;
+                                }
+                                tracing::error!(
+                                    "Failed to append batched log lines for execution {}: {}",
+                                    execution_id,
+                                    e
+                                );
+                            }
                             break;
                         }
                         LogMsg::JsonPatch(_) => continue,
@@ -893,7 +946,25 @@ pub trait ContainerService {
                 }
 
                 // Final flush for any remaining buffered lines
-                flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
+                if !stop_streaming {
+                    if let Err(e) = flush_logs(&db.pool, execution_id, &mut buffered_lines).await {
+                        if is_foreign_key_violation(&e) {
+                            tracing::warn!(
+                                "Execution {} was deleted; stopping log stream",
+                                execution_id
+                            );
+                            let _ = msg_stores.write().await.remove(&execution_id);
+                        } else {
+                            tracing::error!(
+                                "Failed to append batched log lines for execution {}: {}",
+                                execution_id,
+                                e
+                            );
+                        }
+                    }
+                } else {
+                    buffered_lines.clear();
+                }
             }
         })
     }
