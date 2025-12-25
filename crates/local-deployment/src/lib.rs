@@ -21,6 +21,7 @@ use services::services::{
     remote_client::{RemoteClient, RemoteClientError},
     repo::RepoService,
     share::{ShareConfig, SharePublisher},
+    task_queue::TaskQueueService,
 };
 use tokio::sync::RwLock;
 use utils::{
@@ -51,6 +52,7 @@ pub struct LocalDeployment {
     file_search_cache: Arc<FileSearchCache>,
     approvals: Approvals,
     queued_message_service: QueuedMessageService,
+    task_queue_service: TaskQueueService,
     share_publisher: Result<SharePublisher, RemoteClientNotConfigured>,
     share_config: Option<ShareConfig>,
     remote_client: Result<RemoteClient, RemoteClientNotConfigured>,
@@ -130,6 +132,7 @@ impl Deployment for LocalDeployment {
 
         let approvals = Approvals::new(msg_stores.clone());
         let queued_message_service = QueuedMessageService::new();
+        let task_queue_service = TaskQueueService::new(db.clone());
 
         let share_config = ShareConfig::from_env();
 
@@ -207,6 +210,7 @@ impl Deployment for LocalDeployment {
             file_search_cache,
             approvals,
             queued_message_service,
+            task_queue_service,
             share_publisher,
             share_config: share_config.clone(),
             remote_client,
@@ -342,5 +346,14 @@ impl LocalDeployment {
 
     pub fn share_config(&self) -> Option<&ShareConfig> {
         self.share_config.as_ref()
+    }
+
+    pub fn task_queue_service(&self) -> &TaskQueueService {
+        &self.task_queue_service
+    }
+
+    /// Get a cloned container service wrapped in Arc for use with queue processor
+    pub fn container_arc(&self) -> Arc<LocalContainerService> {
+        Arc::new(self.container.clone())
     }
 }

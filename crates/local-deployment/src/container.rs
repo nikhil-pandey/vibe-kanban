@@ -1362,6 +1362,14 @@ impl ContainerService for LocalContainerService {
 
     async fn kill_all_running_processes(&self) -> Result<(), ContainerError> {
         tracing::info!("Killing all running processes");
+
+        // First, save state of running coding agent processes for later resumption
+        let saved = self.save_interrupted_executions().await?;
+        if saved > 0 {
+            tracing::info!("Saved {} interrupted executions for resumption", saved);
+        }
+
+        // Now kill all running processes
         let running_processes = ExecutionProcess::find_running(&self.db.pool).await?;
 
         for process in running_processes {
@@ -1378,6 +1386,182 @@ impl ContainerService for LocalContainerService {
         }
 
         Ok(())
+    }
+
+    async fn save_interrupted_executions(&self) -> Result<u32, ContainerError> {
+        use db::models::interrupted_execution::{CreateInterruptedExecution, InterruptedExecution};
+
+        let running_processes = ExecutionProcess::find_running(&self.db.pool).await?;
+        let mut saved: u32 = 0;
+
+        for process in running_processes {
+            // Only save CodingAgent processes (not dev servers or scripts)
+            if process.run_reason != ExecutionProcessRunReason::CodingAgent {
+                continue;
+            }
+
+            // Check if already saved (avoid duplicates)
+            if InterruptedExecution::find_by_execution_process_id(&self.db.pool, process.id)
+                .await?
+                .is_some()
+            {
+                continue;
+            }
+
+            // Load context to get session and workspace info
+            let ctx = match ExecutionProcess::load_context(&self.db.pool, process.id).await {
+                Ok(ctx) => ctx,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load context for interrupted process {}: {}",
+                        process.id,
+                        e
+                    );
+                    continue;
+                }
+            };
+
+            // Get executor type from action
+            let executor_type = process
+                .executor_action()
+                .ok()
+                .and_then(|a| a.base_executor())
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "Unknown".to_string());
+
+            // Get agent session ID for conversation continuity
+            let agent_session_id = CodingAgentTurn::find_by_execution_process_id(&self.db.pool, process.id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|turn| turn.agent_session_id);
+
+            // Serialize executor action
+            let executor_action_json = match process.executor_action() {
+                Ok(action) => match serde_json::to_string(&action) {
+                    Ok(json) => json,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to serialize executor action for process {}: {}",
+                            process.id,
+                            e
+                        );
+                        continue;
+                    }
+                },
+                Err(_) => {
+                    // Use raw JSON if parsing fails
+                    serde_json::to_string(&process.executor_action.0).unwrap_or_default()
+                }
+            };
+
+            // Save to interrupted_executions table
+            if let Err(e) = InterruptedExecution::create(
+                &self.db.pool,
+                &CreateInterruptedExecution {
+                    execution_process_id: process.id,
+                    session_id: ctx.session.id,
+                    workspace_id: ctx.workspace.id,
+                    executor_action: executor_action_json,
+                    run_reason: process.run_reason.to_string(),
+                    agent_session_id,
+                    executor_type,
+                },
+            )
+            .await
+            {
+                tracing::warn!(
+                    "Failed to save interrupted execution for process {}: {}",
+                    process.id,
+                    e
+                );
+                continue;
+            }
+
+            saved += 1;
+            tracing::debug!(
+                "Saved interrupted execution: process_id={}, session_id={}",
+                process.id,
+                ctx.session.id
+            );
+        }
+
+        Ok(saved)
+    }
+
+    async fn resume_interrupted_executions(&self) -> Result<u32, ContainerError> {
+        use db::models::{
+            interrupted_execution::InterruptedExecution,
+            task_queue::{CreateTaskQueueEntry, TaskQueueEntry},
+        };
+
+        let interrupted = InterruptedExecution::find_not_resumed(&self.db.pool).await?;
+        let mut resumed: u32 = 0;
+
+        for entry in interrupted {
+            // Check if session and workspace still exist
+            let session = match db::models::session::Session::find_by_id(&self.db.pool, entry.session_id).await? {
+                Some(s) => s,
+                None => {
+                    tracing::warn!(
+                        "Session {} not found for interrupted execution {}, marking as resumed",
+                        entry.session_id,
+                        entry.id
+                    );
+                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                    continue;
+                }
+            };
+
+            let workspace = match Workspace::find_by_id(&self.db.pool, entry.workspace_id).await? {
+                Some(w) => w,
+                None => {
+                    tracing::warn!(
+                        "Workspace {} not found for interrupted execution {}, marking as resumed",
+                        entry.workspace_id,
+                        entry.id
+                    );
+                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                    continue;
+                }
+            };
+
+            // Add to task queue with high priority (lower number = higher priority)
+            let priority = 100; // Higher priority than normal queued tasks (1000)
+
+            if let Err(e) = TaskQueueEntry::create(
+                &self.db.pool,
+                &CreateTaskQueueEntry {
+                    session_id: session.id,
+                    workspace_id: workspace.id,
+                    executor_action: entry.executor_action.clone(),
+                    executor_type: entry.executor_type.clone(),
+                    prompt: Some("[Resumed from server restart]".to_string()),
+                    priority: Some(priority),
+                },
+            )
+            .await
+            {
+                tracing::warn!(
+                    "Failed to queue interrupted execution {} for resumption: {}",
+                    entry.id,
+                    e
+                );
+                continue;
+            }
+
+            // Mark as resumed
+            InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+
+            resumed += 1;
+            tracing::info!(
+                "Queued interrupted execution for resumption: id={}, session_id={}",
+                entry.id,
+                entry.session_id
+            );
+        }
+
+        Ok(resumed)
     }
 }
 fn success_exit_status() -> std::process::ExitStatus {

@@ -57,6 +57,27 @@ pub enum ExecutionProcessRunReason {
     DevServer,
 }
 
+impl std::fmt::Display for ExecutionProcessRunReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExecutionProcessRunReason::SetupScript => write!(f, "setupscript"),
+            ExecutionProcessRunReason::CleanupScript => write!(f, "cleanupscript"),
+            ExecutionProcessRunReason::CodingAgent => write!(f, "codingagent"),
+            ExecutionProcessRunReason::DevServer => write!(f, "devserver"),
+        }
+    }
+}
+
+/// Statistics about currently running coding agent processes
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct ConcurrencyStats {
+    /// Total number of running coding agent processes
+    pub total_coding_agents: u32,
+    /// Count of running coding agents by executor type (e.g., "ClaudeCode" -> 2)
+    #[ts(type = "Record<string, number>")]
+    pub by_executor: std::collections::HashMap<String, u32>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, TS)]
 pub struct ExecutionProcess {
     pub id: Uuid,
@@ -268,6 +289,70 @@ impl ExecutionProcess {
         )
         .fetch_all(pool)
         .await
+    }
+
+    /// Count all running coding agent processes (excludes dev servers and scripts)
+    pub async fn count_running_coding_agents(pool: &SqlitePool) -> Result<u32, sqlx::Error> {
+        let count: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!: i64"
+               FROM execution_processes ep
+               WHERE ep.status = 'running'
+                 AND ep.run_reason = 'codingagent'"#
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(count as u32)
+    }
+
+    /// Count running coding agent processes by executor type
+    /// The executor is stored in the executor_action JSON field
+    pub async fn count_running_coding_agents_by_executor(
+        pool: &SqlitePool,
+        executor_name: &str,
+    ) -> Result<u32, sqlx::Error> {
+        // The executor profile is stored in executor_action JSON at:
+        // typ.CodingAgentInitialRequest.executor_profile_id.executor or
+        // typ.CodingAgentFollowUpRequest.executor_profile_id.executor
+        let pattern = format!("%\"executor\":\"{}\"%", executor_name);
+        let count: i64 = sqlx::query_scalar!(
+            r#"SELECT COUNT(*) as "count!: i64"
+               FROM execution_processes ep
+               WHERE ep.status = 'running'
+                 AND ep.run_reason = 'codingagent'
+                 AND ep.executor_action LIKE $1"#,
+            pattern
+        )
+        .fetch_one(pool)
+        .await?;
+        Ok(count as u32)
+    }
+
+    /// Get concurrency stats: total running and per-executor counts
+    pub async fn get_concurrency_stats(
+        pool: &SqlitePool,
+    ) -> Result<ConcurrencyStats, sqlx::Error> {
+        let running_processes = Self::find_running(pool).await?;
+        let mut total_coding_agents: u32 = 0;
+        let mut by_executor: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+
+        for process in running_processes {
+            if process.run_reason != ExecutionProcessRunReason::CodingAgent {
+                continue;
+            }
+            total_coding_agents += 1;
+
+            // Extract executor from the action
+            if let Ok(action) = process.executor_action() {
+                if let Some(executor) = action.base_executor() {
+                    *by_executor.entry(executor.to_string()).or_insert(0) += 1;
+                }
+            }
+        }
+
+        Ok(ConcurrencyStats {
+            total_coding_agents,
+            by_executor,
+        })
     }
 
     /// Find running dev servers for a specific project

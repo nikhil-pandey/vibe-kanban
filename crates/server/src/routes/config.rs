@@ -8,6 +8,7 @@ use axum::{
     response::{Json as ResponseJson, Response},
     routing::{get, put},
 };
+use db::models::execution_process::{ConcurrencyStats, ExecutionProcess};
 use deployment::{Deployment, DeploymentError};
 use executors::{
     executors::{
@@ -19,7 +20,7 @@ use executors::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use services::services::config::{
-    Config, ConfigError, SoundFile,
+    ConcurrencyConfig, Config, ConfigError, SoundFile,
     editor::{EditorConfig, EditorType},
     save_config_to_file,
 };
@@ -41,6 +42,7 @@ pub fn router() -> Router<DeploymentImpl> {
             get(check_editor_availability),
         )
         .route("/agents/check-availability", get(check_agent_availability))
+        .route("/concurrency/stats", get(get_concurrency_stats))
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]
@@ -484,4 +486,26 @@ async fn check_agent_availability(
     };
 
     ResponseJson(ApiResponse::success(info))
+}
+
+/// Response for concurrency stats including current limits
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct ConcurrencyStatsResponse {
+    /// Current concurrency statistics
+    pub stats: ConcurrencyStats,
+    /// Current concurrency configuration
+    pub config: ConcurrencyConfig,
+}
+
+/// Get current concurrency statistics and configuration
+async fn get_concurrency_stats(
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<ConcurrencyStatsResponse>>, ApiError> {
+    let stats = ExecutionProcess::get_concurrency_stats(&deployment.db().pool).await?;
+    let config = deployment.config().read().await.concurrency.clone();
+
+    Ok(ResponseJson(ApiResponse::success(ConcurrencyStatsResponse {
+        stats,
+        config,
+    })))
 }

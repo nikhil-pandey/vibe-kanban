@@ -18,6 +18,7 @@ export function useMerge(
       if (!attemptId) return Promise.resolve();
       return attemptsApi.merge(attemptId, {
         repo_id: params.repoId,
+        auto_rebase: null,
       });
     },
     onSuccess: () => {

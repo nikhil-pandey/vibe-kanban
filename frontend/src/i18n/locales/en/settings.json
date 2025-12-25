@@ -217,6 +217,33 @@
           }
         }
       },
+      "concurrency": {
+        "title": "Task Concurrency",
+        "description": "Control how many tasks can run simultaneously.",
+        "globalLimit": {
+          "label": "Global Limit",
+          "helper": "Maximum number of coding agent tasks that can run at once across all agents.",
+          "unlimited": "Unlimited"
+        },
+        "agentLimits": {
+          "label": "Per-Agent Limits",
+          "helper": "Override the global limit for specific agents. Leave empty to use the global limit.",
+          "placeholder": "Use global limit",
+          "unlimited": "Unlimited",
+          "remove": "Remove agent limit"
+        },
+        "queue": {
+          "label": "Queue Settings",
+          "enabled": {
+            "label": "Enable task queue",
+            "helper": "When enabled, tasks exceeding the concurrency limit will be queued instead of rejected."
+          },
+          "resumeOnRestart": {
+            "label": "Resume tasks on restart",
+            "helper": "When enabled, interrupted tasks will be automatically resumed when the server restarts."
+          }
+        }
+      },
       "safety": {
         "title": "Safety & Disclaimers",
         "description": "Reset acknowledgments for safety warnings and onboarding.",

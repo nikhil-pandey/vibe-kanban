@@ -1,7 +1,7 @@
 use anyhow::{self, Error as AnyhowError};
 use deployment::{Deployment, DeploymentError};
 use server::{DeploymentImpl, routes};
-use services::services::container::ContainerService;
+use services::services::{container::ContainerService, queue_processor::QueueProcessor};
 use sqlx::Error as SqlxError;
 use strip_ansi_escapes::strip;
 use thiserror::Error;
@@ -57,6 +57,26 @@ async fn main() -> Result<(), VibeKanbanError> {
         .backfill_repo_names()
         .await
         .map_err(DeploymentError::from)?;
+
+    // Resume any interrupted executions from previous shutdown
+    match deployment.container().resume_interrupted_executions().await {
+        Ok(count) if count > 0 => {
+            tracing::info!("Resumed {} interrupted executions", count);
+        }
+        Ok(_) => {}
+        Err(e) => {
+            tracing::warn!("Failed to resume interrupted executions: {}", e);
+        }
+    }
+
+    // Start the queue processor background worker
+    let (_queue_handle, queue_shutdown_tx) = QueueProcessor::spawn(
+        deployment.db().clone(),
+        deployment.container_arc(),
+        deployment.task_queue_service().clone(),
+        deployment.config().clone(),
+    );
+
     deployment.spawn_pr_monitor_service().await;
     deployment
         .track_if_analytics_allowed("session_start", serde_json::json!({}))
@@ -126,6 +146,9 @@ async fn main() -> Result<(), VibeKanbanError> {
     axum::serve(listener, app_router)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+
+    // Signal queue processor to shut down
+    let _ = queue_shutdown_tx.send(true);
 
     perform_cleanup_actions(&deployment).await;
 

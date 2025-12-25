@@ -122,7 +122,13 @@ impl IntoResponse for ApiError {
             },
             ApiError::GitHubService(_) => (StatusCode::INTERNAL_SERVER_ERROR, "GitHubServiceError"),
             ApiError::Deployment(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DeploymentError"),
-            ApiError::Container(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ContainerError"),
+            ApiError::Container(container_err) => match container_err {
+                ContainerError::GlobalConcurrencyLimitReached { .. }
+                | ContainerError::AgentConcurrencyLimitReached { .. } => {
+                    (StatusCode::TOO_MANY_REQUESTS, "ConcurrencyLimitError")
+                }
+                _ => (StatusCode::INTERNAL_SERVER_ERROR, "ContainerError"),
+            },
             ApiError::Executor(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ExecutorError"),
             ApiError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "DatabaseError"),
             ApiError::Worktree(_) => (StatusCode::INTERNAL_SERVER_ERROR, "WorktreeError"),

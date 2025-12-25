@@ -45,7 +45,8 @@ use executors::{
 use git2::BranchType;
 use serde::{Deserialize, Serialize};
 use services::services::{
-    container::ContainerService,
+    config::ConcurrencyLimit,
+    container::{ContainerError, ContainerService},
     diff_stream::apply_stream_omit_policy,
     git::{ConflictOp, DiffTarget, GitCliError, GitServiceError},
     github::GitHubService,
@@ -188,6 +189,44 @@ pub struct RunAgentSetupRequest {
 #[derive(Debug, Serialize, TS)]
 pub struct RunAgentSetupResponse {}
 
+/// Check concurrency limits before starting a new task attempt
+async fn check_concurrency_limits(
+    deployment: &DeploymentImpl,
+    executor: &executors::executors::BaseCodingAgent,
+) -> Result<(), ContainerError> {
+    let config = deployment.config().read().await;
+    let concurrency_config = &config.concurrency;
+
+    // Get current stats
+    let stats = ExecutionProcess::get_concurrency_stats(&deployment.db().pool).await?;
+
+    // Check global limit
+    if let ConcurrencyLimit::Limited(limit) = concurrency_config.global_limit {
+        if stats.total_coding_agents >= limit {
+            return Err(ContainerError::GlobalConcurrencyLimitReached {
+                current: stats.total_coding_agents,
+                limit,
+            });
+        }
+    }
+
+    // Check agent-specific limit
+    let effective_limit = concurrency_config.effective_limit_for_agent(executor);
+    if let ConcurrencyLimit::Limited(limit) = effective_limit {
+        let agent_name = executor.to_string();
+        let current = stats.by_executor.get(&agent_name).copied().unwrap_or(0);
+        if current >= *limit {
+            return Err(ContainerError::AgentConcurrencyLimitReached {
+                agent: agent_name,
+                current,
+                limit: *limit,
+            });
+        }
+    }
+
+    Ok(())
+}
+
 #[axum::debug_handler]
 pub async fn create_task_attempt(
     State(deployment): State<DeploymentImpl>,
@@ -200,6 +239,9 @@ pub async fn create_task_attempt(
             "At least one repository is required".to_string(),
         ));
     }
+
+    // Check concurrency limits before creating the workspace
+    check_concurrency_limits(&deployment, &executor_profile_id.executor).await?;
 
     let pool = &deployment.db().pool;
     let task = Task::find_by_id(&deployment.db().pool, payload.task_id)

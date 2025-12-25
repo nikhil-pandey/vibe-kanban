@@ -77,6 +77,14 @@ pub enum ContainerError {
     Io(#[from] std::io::Error),
     #[error("Failed to kill process: {0}")]
     KillFailed(std::io::Error),
+    #[error("Global concurrency limit reached: {current}/{limit} tasks running")]
+    GlobalConcurrencyLimitReached { current: u32, limit: u32 },
+    #[error("Concurrency limit reached for agent {agent}: {current}/{limit} tasks running")]
+    AgentConcurrencyLimitReached {
+        agent: String,
+        current: u32,
+        limit: u32,
+    },
     #[error(transparent)]
     Other(#[from] AnyhowError), // Catches any unclassified errors
 }
@@ -297,6 +305,14 @@ pub trait ContainerService {
         }
         Ok(())
     }
+
+    /// Save state of running executions before shutdown for later resumption.
+    /// Only saves CodingAgent processes (not dev servers or scripts).
+    async fn save_interrupted_executions(&self) -> Result<u32, ContainerError>;
+
+    /// Resume interrupted executions by adding them to the task queue.
+    /// Called on startup after cleanup_orphan_executions.
+    async fn resume_interrupted_executions(&self) -> Result<u32, ContainerError>;
 
     /// Backfill before_head_commit for legacy execution processes.
     /// Rules:

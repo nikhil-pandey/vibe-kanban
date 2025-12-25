@@ -306,7 +306,11 @@ export type DirectoryEntry = { name: string, path: string, is_directory: boolean
 
 export type DirectoryListResponse = { entries: Array<DirectoryEntry>, current_path: string, };
 
-export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, };
+export type Config = { config_version: string, theme: ThemeMode, executor_profile: ExecutorProfileId, disclaimer_acknowledged: boolean, onboarding_acknowledged: boolean, notifications: NotificationConfig, editor: EditorConfig, github: GitHubConfig, analytics_enabled: boolean, workspace_dir: string | null, last_app_version: string | null, show_release_notes: boolean, language: UiLanguage, git_branch_prefix: string, showcases: ShowcaseState, pr_auto_description_enabled: boolean, pr_auto_description_prompt: string | null, 
+/**
+ * Concurrency settings for task execution
+ */
+concurrency: ConcurrencyConfig, };
 
 export type NotificationConfig = { sound_enabled: boolean, push_enabled: boolean, sound_file: SoundFile, };
 
@@ -325,6 +329,101 @@ export enum SoundFile { ABSTRACT_SOUND1 = "ABSTRACT_SOUND1", ABSTRACT_SOUND2 = "
 export type UiLanguage = "BROWSER" | "EN" | "JA" | "ES" | "KO" | "ZH_HANS";
 
 export type ShowcaseState = { seen_features: Array<string>, };
+
+export type ConcurrencyConfig = { 
+/**
+ * Global maximum concurrent tasks across all agents (null = unlimited)
+ */
+global_limit: ConcurrencyLimit, 
+/**
+ * Per-agent concurrency limits (agent name -> limit, null = unlimited)
+ * If an agent is not in this map, it uses the global limit
+ */
+agent_limits: Record<string, number | null>, 
+/**
+ * Queue behavior configuration
+ */
+queue: QueueConfig, };
+
+export type ConcurrencyLimit = number | null;
+
+export type QueueConfig = { 
+/**
+ * Whether to auto-queue tasks when concurrency limit is reached (vs reject with 429)
+ */
+enabled: boolean, 
+/**
+ * Whether to auto-resume interrupted tasks on server restart
+ */
+resume_on_restart: boolean, };
+
+export type ConcurrencyStats = { 
+/**
+ * Total number of running coding agent processes
+ */
+total_coding_agents: number, 
+/**
+ * Count of running coding agents by executor type (e.g., "ClaudeCode" -> 2)
+ */
+by_executor: Record<string, number>, };
+
+export type ConcurrencyStatsResponse = { 
+/**
+ * Current concurrency statistics
+ */
+stats: ConcurrencyStats, 
+/**
+ * Current concurrency configuration
+ */
+config: ConcurrencyConfig, };
+
+export type TaskQueueEntry = { id: string, session_id: string, workspace_id: string, 
+/**
+ * JSON serialized ExecutorAction
+ */
+executor_action: string, 
+/**
+ * Priority: lower = higher priority (default 1000)
+ */
+priority: number, status: QueueEntryStatus, 
+/**
+ * Executor type for per-agent tracking (e.g., "ClaudeCode")
+ */
+executor_type: string, 
+/**
+ * Original prompt for display
+ */
+prompt: string | null, 
+/**
+ * Error message if failed
+ */
+error_message: string | null, queued_at: string, started_at: string | null, completed_at: string | null, created_at: string, updated_at: string, };
+
+export type QueueEntryStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
+
+export type QueuePosition = { entry_id: string, 
+/**
+ * 1-based position in the queue
+ */
+position: number, 
+/**
+ * Total entries ahead of this one
+ */
+total_ahead: number, 
+/**
+ * Estimated wait time in minutes (if available)
+ */
+estimated_wait_minutes: number | null, };
+
+export type QueueDepth = { total_pending: number, by_executor: Record<string, number>, };
+
+export type SessionQueueStatus = { is_queued: boolean, entry: TaskQueueEntry | null, position: QueuePosition | null, };
+
+export type QueueStats = { total_pending: number, total_processing: number, by_executor: Record<string, ExecutorQueueStats>, estimated_wait_minutes: number | null, };
+
+export type ExecutorQueueStats = { pending: number, processing: number, limit: number | null, };
+
+export type FollowUpResponse = { "status": "started", execution_process: ExecutionProcess, } | { "status": "queued", queue_entry: TaskQueueEntry, position: QueuePosition | null, };
 
 export type GitBranch = { name: string, is_current: boolean, is_remote: boolean, last_commit_date: Date, };
 

@@ -20,14 +20,16 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Loader2, Volume2 } from 'lucide-react';
+import { Loader2, Volume2, X } from 'lucide-react';
 import {
   DEFAULT_PR_DESCRIPTION_PROMPT,
   EditorType,
   SoundFile,
   ThemeMode,
   UiLanguage,
+  ConcurrencyLimit,
 } from 'shared/types';
+import type { BaseCodingAgent } from 'shared/types';
 import { getLanguageOptions } from '@/i18n/languages';
 
 import { toPrettyCase } from '@/utils/string';
@@ -658,6 +660,257 @@ export function GeneralSettings() {
               <p className="text-sm text-muted-foreground">
                 {t('settings.general.privacy.telemetry.helper')}
               </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('settings.general.concurrency.title')}</CardTitle>
+          <CardDescription>
+            {t('settings.general.concurrency.description')}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="global-concurrency-limit">
+              {t('settings.general.concurrency.globalLimit.label')}
+            </Label>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="global-unlimited"
+                  checked={draft?.concurrency?.global_limit === null}
+                  onCheckedChange={(checked: boolean) =>
+                    updateDraft({
+                      concurrency: {
+                        ...draft!.concurrency,
+                        global_limit: checked ? null : 1,
+                      },
+                    })
+                  }
+                />
+                <Label htmlFor="global-unlimited" className="cursor-pointer text-sm">
+                  {t('settings.general.concurrency.globalLimit.unlimited')}
+                </Label>
+              </div>
+              {draft?.concurrency?.global_limit !== null && (
+                <Input
+                  id="global-concurrency-limit"
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="w-24"
+                  value={draft?.concurrency?.global_limit ?? 1}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value, 10);
+                    if (!isNaN(value) && value > 0) {
+                      updateDraft({
+                        concurrency: {
+                          ...draft!.concurrency,
+                          global_limit: value as ConcurrencyLimit,
+                        },
+                      });
+                    }
+                  }}
+                />
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {t('settings.general.concurrency.globalLimit.helper')}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('settings.general.concurrency.agentLimits.label')}</Label>
+            <p className="text-sm text-muted-foreground mb-3">
+              {t('settings.general.concurrency.agentLimits.helper')}
+            </p>
+            <div className="grid gap-3">
+              {Object.keys(draft?.concurrency?.agent_limits ?? {}).length > 0 &&
+                Object.entries(draft?.concurrency?.agent_limits ?? {}).map(
+                  ([agent, limit]) => (
+                    <div key={agent} className="flex items-center gap-2">
+                      <span className="text-sm font-medium w-32">{agent}</span>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id={`agent-unlimited-${agent}`}
+                          checked={limit === null}
+                          onCheckedChange={(checked: boolean) => {
+                            const newLimits = {
+                              ...draft!.concurrency.agent_limits,
+                            };
+                            newLimits[agent] = checked ? null : 1;
+                            updateDraft({
+                              concurrency: {
+                                ...draft!.concurrency,
+                                agent_limits: newLimits,
+                              },
+                            });
+                          }}
+                        />
+                        <Label
+                          htmlFor={`agent-unlimited-${agent}`}
+                          className="cursor-pointer text-sm"
+                        >
+                          {t('settings.general.concurrency.agentLimits.unlimited')}
+                        </Label>
+                      </div>
+                      {limit !== null && (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          className="w-20"
+                          value={limit}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value, 10);
+                            if (!isNaN(value) && value > 0) {
+                              const newLimits = {
+                                ...draft!.concurrency.agent_limits,
+                              };
+                              newLimits[agent] = value;
+                              updateDraft({
+                                concurrency: {
+                                  ...draft!.concurrency,
+                                  agent_limits: newLimits,
+                                },
+                              });
+                            }
+                          }}
+                        />
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title={t('settings.general.concurrency.agentLimits.remove')}
+                        onClick={() => {
+                          setDraft((prev) => {
+                            if (!prev) return prev;
+                            const newLimits = { ...prev.concurrency.agent_limits };
+                            delete newLimits[agent];
+                            const next = {
+                              ...prev,
+                              concurrency: {
+                                ...prev.concurrency,
+                                agent_limits: newLimits,
+                              },
+                            };
+                            if (!isEqual(next, config)) {
+                              setDirty(true);
+                            }
+                            return next;
+                          });
+                        }}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )
+                )}
+              <Select
+                value=""
+                onValueChange={(agent: string) => {
+                  if (agent && !draft?.concurrency?.agent_limits?.[agent]) {
+                    const newLimits = {
+                      ...draft!.concurrency.agent_limits,
+                      [agent]: 1,
+                    };
+                    updateDraft({
+                      concurrency: {
+                        ...draft!.concurrency,
+                        agent_limits: newLimits,
+                      },
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger className="w-48">
+                  <SelectValue
+                    placeholder="Add agent limit..."
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {[
+                    'CLAUDE_CODE',
+                    'AMP',
+                    'GEMINI',
+                    'CODEX',
+                    'OPENCODE',
+                    'CURSOR_AGENT',
+                    'QWEN_CODE',
+                    'COPILOT',
+                    'DROID',
+                  ]
+                    .filter(
+                      (agent) =>
+                        !draft?.concurrency?.agent_limits?.[agent as BaseCodingAgent]
+                    )
+                    .map((agent) => (
+                      <SelectItem key={agent} value={agent}>
+                        {toPrettyCase(agent)}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-4 border-t">
+            <Label>{t('settings.general.concurrency.queue.label')}</Label>
+            <div className="space-y-3 mt-2">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="queue-enabled"
+                  checked={draft?.concurrency?.queue?.enabled ?? true}
+                  onCheckedChange={(checked: boolean) =>
+                    updateDraft({
+                      concurrency: {
+                        ...draft!.concurrency,
+                        queue: {
+                          ...draft!.concurrency.queue,
+                          enabled: checked,
+                        },
+                      },
+                    })
+                  }
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor="queue-enabled" className="cursor-pointer text-sm">
+                    {t('settings.general.concurrency.queue.enabled.label')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.general.concurrency.queue.enabled.helper')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="queue-resume"
+                  checked={draft?.concurrency?.queue?.resume_on_restart ?? true}
+                  onCheckedChange={(checked: boolean) =>
+                    updateDraft({
+                      concurrency: {
+                        ...draft!.concurrency,
+                        queue: {
+                          ...draft!.concurrency.queue,
+                          resume_on_restart: checked,
+                        },
+                      },
+                    })
+                  }
+                />
+                <div className="grid gap-1">
+                  <Label htmlFor="queue-resume" className="cursor-pointer text-sm">
+                    {t('settings.general.concurrency.queue.resumeOnRestart.label')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.general.concurrency.queue.resumeOnRestart.helper')}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>
