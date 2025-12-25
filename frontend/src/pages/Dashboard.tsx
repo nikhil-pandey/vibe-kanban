@@ -2,7 +2,7 @@ import { useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Plus, FolderPlus } from 'lucide-react';
-import { useAllTasks } from '@/hooks';
+import { useAllTasks, useProjects } from '@/hooks';
 import { ProjectFormDialog } from '@/components/dialogs/projects/ProjectFormDialog';
 import { useSearch } from '@/contexts/SearchContext';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
@@ -106,10 +106,36 @@ export function Dashboard() {
     tasks,
     tasksById,
     tasksByProject,
-    projectNames,
-    isLoading,
+    projectNames: taskProjectNames,
+    isLoading: isTasksLoading,
     error: streamError,
   } = useAllTasks();
+
+  // Fetch all projects (including those without tasks)
+  const { projects: allProjects, projectsById, isLoading: isProjectsLoading } = useProjects();
+
+  const isLoading = isTasksLoading || isProjectsLoading;
+
+  // Merge project names from tasks with all projects to include empty projects
+  const projectNames = useMemo(() => {
+    const projectMap = new Map<string, string>();
+
+    // Add all projects from the projects list
+    allProjects.forEach((project) => {
+      projectMap.set(project.id, project.name);
+    });
+
+    // Also add any from tasks (in case of timing issues)
+    taskProjectNames.forEach((p) => {
+      if (!projectMap.has(p.id)) {
+        projectMap.set(p.id, p.name);
+      }
+    });
+
+    return Array.from(projectMap.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allProjects, taskProjectNames]);
 
   // Selected task from the tasksById map
   const selectedTask = useMemo(() => {
@@ -252,10 +278,15 @@ export function Dashboard() {
     return result;
   }, [tasksByProject, statusFilters, hasSearch, normalizedSearch]);
 
-  // Get project names that have visible tasks
+  // Get projects to display - show all projects, but only show projects with matching tasks when searching
   const visibleProjects = useMemo(() => {
-    return projectNames.filter((p) => filteredTasksByProject[p.id]?.length > 0);
-  }, [projectNames, filteredTasksByProject]);
+    if (hasSearch) {
+      // When searching, only show projects that have matching tasks
+      return projectNames.filter((p) => filteredTasksByProject[p.id]?.length > 0);
+    }
+    // Otherwise show all projects (including empty ones)
+    return projectNames;
+  }, [projectNames, filteredTasksByProject, hasSearch]);
 
   const isPanelOpen = Boolean(selectedTask);
 
@@ -323,6 +354,7 @@ export function Dashboard() {
               key={project.id}
               projectId={project.id}
               projectName={project.name}
+              project={projectsById[project.id]}
               tasks={filteredTasksByProject[project.id] || []}
               selectedTaskId={selectedTaskId ?? undefined}
               onSelectTask={handleSelectTask}

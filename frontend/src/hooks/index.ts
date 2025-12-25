@@ -34,3 +34,5 @@ export { useVariant } from './useVariant';
 export { useRetryProcess } from './useRetryProcess';
 export { useAllTasks } from './useAllTasks';
 export type { UseAllTasksResult } from './useAllTasks';
+export { useProjects } from './useProjects';
+export type { UseProjectsResult } from './useProjects';
