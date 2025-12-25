@@ -130,7 +130,7 @@ export function ProjectSection({
   const handleCreateTask = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      openTaskForm({ mode: 'create', projectId });
+      openTaskForm({ mode: 'create', projectId, navigateOnCreate: false });
     },
     [projectId]
   );

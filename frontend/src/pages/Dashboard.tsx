@@ -331,7 +331,7 @@ export function Dashboard() {
   }, [refreshTasks, refreshProjects]);
 
   const handleCreateTask = useCallback((projectId: string) => {
-    openTaskForm({ mode: 'create', projectId });
+    openTaskForm({ mode: 'create', projectId, navigateOnCreate: false });
   }, []);
 
   if (isLoading && tasks.length === 0) {

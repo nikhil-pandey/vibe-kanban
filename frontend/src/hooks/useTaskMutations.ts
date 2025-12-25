@@ -13,7 +13,14 @@ import type {
 } from 'shared/types';
 import { taskKeys } from './useTask';
 
-export function useTaskMutations(projectId?: string) {
+type UseTaskMutationsOptions = {
+  navigateOnCreate?: boolean;
+};
+
+export function useTaskMutations(
+  projectId?: string,
+  { navigateOnCreate = true }: UseTaskMutationsOptions = {}
+) {
   const queryClient = useQueryClient();
   const navigate = useNavigateWithSearch();
 
@@ -36,7 +43,7 @@ export function useTaskMutations(projectId?: string) {
           ),
         });
       }
-      if (projectId) {
+      if (projectId && navigateOnCreate) {
         navigate(`${paths.task(projectId, createdTask.id)}/attempts/latest`);
       }
     },
@@ -58,7 +65,7 @@ export function useTaskMutations(projectId?: string) {
           ),
         });
       }
-      if (projectId) {
+      if (projectId && navigateOnCreate) {
         navigate(`${paths.task(projectId, createdTask.id)}/attempts/latest`);
       }
     },
