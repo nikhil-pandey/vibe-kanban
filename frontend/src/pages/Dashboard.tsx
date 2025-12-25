@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Plus, FolderPlus } from 'lucide-react';
+import { AlertTriangle, Plus, FolderPlus, ListPlus } from 'lucide-react';
 import { useAllTasks, useProjects } from '@/hooks';
 import { ProjectFormDialog } from '@/components/dialogs/projects/ProjectFormDialog';
 import { useSearch } from '@/contexts/SearchContext';
@@ -18,6 +18,13 @@ import {
 import { Loader } from '@/components/ui/loader';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { openTaskForm } from '@/lib/openTaskForm';
 import { NewCard, NewCardHeader } from '@/components/ui/new-card';
 import { TasksLayout, type LayoutMode } from '@/components/layout/TasksLayout';
 import TaskPanel from '@/components/panels/TaskPanel';
@@ -304,6 +311,10 @@ export function Dashboard() {
     await ProjectFormDialog.show({});
   }, []);
 
+  const handleCreateTask = useCallback((projectId: string) => {
+    openTaskForm({ mode: 'create', projectId });
+  }, []);
+
   if (isLoading && tasks.length === 0) {
     return <Loader message={t('loading', { defaultValue: 'Loading...' })} size={32} className="py-8" />;
   }
@@ -318,14 +329,37 @@ export function Dashboard() {
             selectedStatuses={statusFilters}
             onStatusChange={handleStatusFilterChange}
           />
-          <Button
-            onClick={handleCreateProject}
-            size="sm"
-            className="gap-2"
-          >
-            <FolderPlus className="h-4 w-4" />
-            {t('projects.create', { defaultValue: 'New Project' })}
-          </Button>
+          <div className="flex items-center gap-2">
+            {projectNames.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className="gap-2">
+                    <ListPlus className="h-4 w-4" />
+                    {t('tasks.create', { defaultValue: 'New Task' })}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {projectNames.map((project) => (
+                    <DropdownMenuItem
+                      key={project.id}
+                      onClick={() => handleCreateTask(project.id)}
+                    >
+                      {project.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <Button
+              onClick={handleCreateProject}
+              size="sm"
+              variant="outline"
+              className="gap-2"
+            >
+              <FolderPlus className="h-4 w-4" />
+              {t('projects.create', { defaultValue: 'New Project' })}
+            </Button>
+          </div>
         </div>
       </div>
 
