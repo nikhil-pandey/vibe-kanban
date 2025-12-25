@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle, Plus, FolderPlus } from 'lucide-react';
 import { useAllTasks } from '@/hooks';
+import { ProjectFormDialog } from '@/components/dialogs/projects/ProjectFormDialog';
 import { useSearch } from '@/contexts/SearchContext';
 import { useTaskAttemptWithSession } from '@/hooks/useTaskAttempt';
 import { useTaskAttempts } from '@/hooks/useTaskAttempts';
@@ -268,6 +269,10 @@ export function Dashboard() {
       : `${truncated}...`;
   };
 
+  const handleCreateProject = useCallback(async () => {
+    await ProjectFormDialog.show({});
+  }, []);
+
   if (isLoading && tasks.length === 0) {
     return <Loader message={t('loading', { defaultValue: 'Loading...' })} size={32} className="py-8" />;
   }
@@ -275,12 +280,22 @@ export function Dashboard() {
   // Dashboard content (left side)
   const dashboardContent = (
     <div className="flex flex-col h-full">
-      {/* Filters */}
+      {/* Filters and Actions */}
       <div className="px-4 py-3 border-b bg-background shrink-0">
-        <DashboardFilters
-          selectedStatuses={statusFilters}
-          onStatusChange={handleStatusFilterChange}
-        />
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <DashboardFilters
+            selectedStatuses={statusFilters}
+            onStatusChange={handleStatusFilterChange}
+          />
+          <Button
+            onClick={handleCreateProject}
+            size="sm"
+            className="gap-2"
+          >
+            <FolderPlus className="h-4 w-4" />
+            {t('projects.create', { defaultValue: 'New Project' })}
+          </Button>
+        </div>
       </div>
 
       {/* Project sections */}
