@@ -241,6 +241,19 @@ export function Dashboard() {
     [searchParams, setSearchParams]
   );
 
+  const handleAttemptCreated = useCallback(
+    (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => {
+      // Update URL params to show the newly created attempt in the sidebar
+      const params = new URLSearchParams(searchParams);
+      params.set('task', task.id);
+      params.set('project', task.project_id);
+      params.set('attempt', attempt.id);
+      params.delete('view');
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
   const handleClosePanel = useCallback(() => {
     const params = new URLSearchParams(searchParams);
     params.delete('task');
@@ -392,6 +405,7 @@ export function Dashboard() {
               tasks={filteredTasksByProject[project.id] || []}
               selectedTaskId={selectedTaskId ?? undefined}
               onSelectTask={handleSelectTask}
+              onAttemptCreated={handleAttemptCreated}
               defaultExpanded={true}
             />
           ))

@@ -25,24 +25,33 @@ import { useUserSystem } from '@/components/ConfigProvider';
 import { paths } from '@/lib/paths';
 import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { defineModal } from '@/lib/modals';
-import type { ExecutorProfileId, BaseCodingAgent } from 'shared/types';
+import type { ExecutorProfileId, BaseCodingAgent, Workspace } from 'shared/types';
 import { useKeySubmitTask, Scope } from '@/keyboard';
 
 export interface CreateAttemptDialogProps {
   taskId: string;
+  projectId?: string;
+  /** Optional callback when attempt is created. If provided, overrides default navigation. */
+  onSuccess?: (attempt: Workspace) => void;
 }
 
 const CreateAttemptDialogImpl = NiceModal.create<CreateAttemptDialogProps>(
-  ({ taskId }) => {
+  ({ taskId, projectId: propProjectId, onSuccess: propOnSuccess }) => {
     const modal = useModal();
     const navigate = useNavigateWithSearch();
-    const { projectId } = useProject();
+    const { projectId: contextProjectId } = useProject();
+    // Use prop projectId if provided, otherwise fall back to context
+    const projectId = propProjectId ?? contextProjectId;
     const { t } = useTranslation('tasks');
     const { profiles, config } = useUserSystem();
     const { createAttempt, isCreating, error } = useAttemptCreation({
       taskId,
       onSuccess: (attempt) => {
-        if (projectId) {
+        if (propOnSuccess) {
+          // Use custom callback if provided
+          propOnSuccess(attempt);
+        } else if (projectId) {
+          // Default: navigate to attempt page
           navigate(paths.attempt(projectId, taskId, attempt.id));
         }
       },

@@ -1,6 +1,6 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, XCircle, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Loader2, XCircle, MoreHorizontal, Pencil, Trash2, Play, Square } from 'lucide-react';
 import {
   Table,
   TableHead,
@@ -16,10 +16,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { StatusBadge, getStatusColor } from '@/components/ui/StatusBadge';
-import { tasksApi } from '@/lib/api';
+import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
+import { tasksApi, attemptsApi } from '@/lib/api';
 import { openTaskForm } from '@/lib/openTaskForm';
-import type { TaskWithAttemptStatusAndProject, TaskStatus } from 'shared/types';
+import type { TaskWithAttemptStatusAndProject, TaskStatus, Workspace } from 'shared/types';
 
 const TASK_STATUSES: TaskStatus[] = [
   'todo',
@@ -33,14 +40,58 @@ interface TaskTableProps {
   tasks: TaskWithAttemptStatusAndProject[];
   selectedTaskId?: string;
   onSelectTask: (task: TaskWithAttemptStatusAndProject) => void;
+  onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
 }
 
 export function TaskTable({
   tasks,
   selectedTaskId,
   onSelectTask,
+  onAttemptCreated,
 }: TaskTableProps) {
   const { t } = useTranslation(['tasks', 'common']);
+  const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null);
+
+  const handleStartAttempt = useCallback(
+    async (e: React.MouseEvent, task: TaskWithAttemptStatusAndProject) => {
+      e.stopPropagation();
+      // Use the dialog's static show method, passing projectId since we're not within a ProjectProvider
+      // Provide onSuccess callback to stay on dashboard and open the attempt in sidebar
+      await CreateAttemptDialog.show({
+        taskId: task.id,
+        projectId: task.project_id,
+        onSuccess: onAttemptCreated
+          ? (attempt) => onAttemptCreated(task, attempt)
+          : undefined,
+      });
+    },
+    [onAttemptCreated]
+  );
+
+  const handleStopAttempt = useCallback(
+    async (e: React.MouseEvent, task: TaskWithAttemptStatusAndProject) => {
+      e.stopPropagation();
+      try {
+        setStoppingTaskId(task.id);
+        // Fetch attempts to find the running one
+        const attempts = await attemptsApi.getAll(task.id);
+        // Get the most recent attempt (sorted by created_at desc)
+        const sortedAttempts = [...attempts].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        const runningAttempt = sortedAttempts[0];
+
+        if (runningAttempt) {
+          await attemptsApi.stop(runningAttempt.id);
+        }
+      } catch (err) {
+        console.error('Failed to stop attempt:', err);
+      } finally {
+        setStoppingTaskId(null);
+      }
+    },
+    []
+  );
 
   const handleStatusChange = useCallback(
     async (taskId: string, newStatus: TaskStatus) => {
@@ -95,7 +146,8 @@ export function TaskTable({
         <TableRow>
           <TableHeaderCell className="py-2 px-2">{t('common:labels.title', { defaultValue: 'Title' })}</TableHeaderCell>
           <TableHeaderCell className="py-2 px-2 w-36">{t('common:labels.status', { defaultValue: 'Status' })}</TableHeaderCell>
-          <TableHeaderCell className="py-2 px-2 w-12"></TableHeaderCell>
+          <TableHeaderCell className="py-2 px-2 w-10"></TableHeaderCell>
+          <TableHeaderCell className="py-2 px-2 w-10"></TableHeaderCell>
         </TableRow>
       </TableHead>
       <TableBody>
@@ -143,6 +195,46 @@ export function TaskTable({
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </TableCell>
+            <TableCell className="py-2 px-1">
+              <TooltipProvider>
+                {task.has_in_progress_attempt ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={(e) => handleStopAttempt(e, task)}
+                        disabled={stoppingTaskId === task.id}
+                      >
+                        {stoppingTaskId === task.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Square className="h-3.5 w-3.5 fill-current" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('tasks:actions.stopAttempt', { defaultValue: 'Stop attempt' })}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="icon"
+                        className="h-7 w-7 text-success hover:text-success hover:bg-success/10"
+                        onClick={(e) => handleStartAttempt(e, task)}
+                      >
+                        <Play className="h-3.5 w-3.5 fill-current" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('tasks:actions.startAttempt', { defaultValue: 'Start attempt' })}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </TooltipProvider>
             </TableCell>
             <TableCell className="py-2 px-2">
               <DropdownMenu>

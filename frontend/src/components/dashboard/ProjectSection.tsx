@@ -26,7 +26,7 @@ import { useOpenProjectInEditor } from '@/hooks/useOpenProjectInEditor';
 import { useProjectRepos } from '@/hooks';
 import { useProjectMutations } from '@/hooks/useProjectMutations';
 import { LinkProjectDialog } from '@/components/dialogs/projects/LinkProjectDialog';
-import type { Project, TaskWithAttemptStatusAndProject } from 'shared/types';
+import type { Project, TaskWithAttemptStatusAndProject, Workspace } from 'shared/types';
 
 interface ProjectSectionProps {
   projectId: string;
@@ -35,6 +35,7 @@ interface ProjectSectionProps {
   tasks: TaskWithAttemptStatusAndProject[];
   selectedTaskId?: string;
   onSelectTask: (task: TaskWithAttemptStatusAndProject) => void;
+  onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
   defaultExpanded?: boolean;
 }
 
@@ -45,6 +46,7 @@ export function ProjectSection({
   tasks,
   selectedTaskId,
   onSelectTask,
+  onAttemptCreated,
   defaultExpanded = true,
 }: ProjectSectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -249,6 +251,7 @@ export function ProjectSection({
             tasks={tasks}
             selectedTaskId={selectedTaskId}
             onSelectTask={onSelectTask}
+            onAttemptCreated={onAttemptCreated}
           />
         </div>
       )}
