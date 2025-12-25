@@ -818,6 +818,28 @@ pub trait ContainerService {
 
             if let Some(store) = store {
                 let mut stream = store.history_plus_stream();
+                let mut buffered_lines: Vec<String> = Vec::with_capacity(32);
+
+                async fn flush_logs(
+                    pool: &sqlx::SqlitePool,
+                    execution_id: Uuid,
+                    lines: &mut Vec<String>,
+                ) {
+                    if lines.is_empty() {
+                        return;
+                    }
+
+                    if let Err(e) =
+                        ExecutionProcessLogs::append_log_lines(pool, execution_id, lines).await
+                    {
+                        tracing::error!(
+                            "Failed to append batched log lines for execution {}: {}",
+                            execution_id,
+                            e
+                        );
+                    }
+                    lines.clear();
+                }
 
                 while let Some(Ok(msg)) = stream.next().await {
                     match &msg {
@@ -825,21 +847,12 @@ pub trait ContainerService {
                             // Serialize this individual message as a JSONL line
                             match serde_json::to_string(&msg) {
                                 Ok(jsonl_line) => {
-                                    let jsonl_line_with_newline = format!("{jsonl_line}\n");
+                                    buffered_lines.push(format!("{jsonl_line}\n"));
 
-                                    // Append this line to the database
-                                    if let Err(e) = ExecutionProcessLogs::append_log_line(
-                                        &db.pool,
-                                        execution_id,
-                                        &jsonl_line_with_newline,
-                                    )
-                                    .await
-                                    {
-                                        tracing::error!(
-                                            "Failed to append log line for execution {}: {}",
-                                            execution_id,
-                                            e
-                                        );
+                                    // Flush in small batches to reduce lock contention
+                                    if buffered_lines.len() >= 32 {
+                                        flush_logs(&db.pool, execution_id, &mut buffered_lines)
+                                            .await;
                                     }
                                 }
                                 Err(e) => {
@@ -852,6 +865,9 @@ pub trait ContainerService {
                             }
                         }
                         LogMsg::SessionId(agent_session_id) => {
+                            // Flush pending logs before other operations
+                            flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
+
                             // Append this line to the database
                             if let Err(e) = CodingAgentTurn::update_agent_session_id(
                                 &db.pool,
@@ -869,11 +885,15 @@ pub trait ContainerService {
                             }
                         }
                         LogMsg::Finished => {
+                            flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
                             break;
                         }
                         LogMsg::JsonPatch(_) => continue,
                     }
                 }
+
+                // Final flush for any remaining buffered lines
+                flush_logs(&db.pool, execution_id, &mut buffered_lines).await;
             }
         })
     }

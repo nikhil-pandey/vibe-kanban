@@ -4,6 +4,7 @@ use axum::{
 };
 
 use crate::DeploymentImpl;
+use crate::middleware::request_timing;
 
 pub mod approvals;
 pub mod config;
@@ -47,6 +48,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
         .merge(scratch::router(&deployment))
         .merge(sessions::router(&deployment))
         .nest("/images", images::routes())
+        .layer(axum::middleware::from_fn(request_timing::log_timing))
         .with_state(deployment);
 
     Router::new()

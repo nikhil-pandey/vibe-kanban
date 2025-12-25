@@ -12,7 +12,6 @@ import type { LayoutMode } from '../layout/TasksLayout';
 import type { TaskWithAttemptStatus } from 'shared/types';
 import type { Workspace } from 'shared/types';
 import { ActionsDropdown } from '../ui/actions-dropdown';
-import { usePostHog } from 'posthog-js/react';
 import type { SharedTaskRecord } from '@/hooks/useProjectTasks';
 
 interface AttemptHeaderActionsProps {
@@ -33,7 +32,6 @@ export const AttemptHeaderActions = ({
   sharedTask,
 }: AttemptHeaderActionsProps) => {
   const { t } = useTranslation('tasks');
-  const posthog = usePostHog();
 
   return (
     <>
@@ -45,28 +43,7 @@ export const AttemptHeaderActions = ({
             onValueChange={(v) => {
               const newMode = (v as LayoutMode) || null;
 
-              // Track view navigation
-              if (newMode === 'preview') {
-                posthog?.capture('preview_navigated', {
-                  trigger: 'button',
-                  timestamp: new Date().toISOString(),
-                  source: 'frontend',
-                });
-              } else if (newMode === 'diffs') {
-                posthog?.capture('diffs_navigated', {
-                  trigger: 'button',
-                  timestamp: new Date().toISOString(),
-                  source: 'frontend',
-                });
-              } else if (newMode === null) {
-                // Closing the view (clicked active button)
-                posthog?.capture('view_closed', {
-                  trigger: 'button',
-                  from_view: mode ?? 'attempt',
-                  timestamp: new Date().toISOString(),
-                  source: 'frontend',
-                });
-              }
+              // telemetry disabled
 
               onModeChange(newMode);
             }}

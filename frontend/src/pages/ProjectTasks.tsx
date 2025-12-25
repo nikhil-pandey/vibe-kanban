@@ -11,7 +11,6 @@ import { openTaskForm } from '@/lib/openTaskForm';
 import { FeatureShowcaseDialog } from '@/components/dialogs/global/FeatureShowcaseDialog';
 import { showcases } from '@/config/showcases';
 import { useUserSystem } from '@/components/ConfigProvider';
-import { usePostHog } from 'posthog-js/react';
 
 import { useSearch } from '@/contexts/SearchContext';
 import { useProject } from '@/contexts/ProjectContext';
@@ -139,7 +138,7 @@ export function ProjectTasks() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isXL = useMediaQuery('(min-width: 1280px)');
   const isMobile = !isXL;
-  const posthog = usePostHog();
+  // Telemetry disabled
   const [selectedSharedTaskId, setSelectedSharedTaskId] = useState<
     string | null
   >(null);
@@ -559,21 +558,7 @@ export function ProjectTasks() {
         const idx = order.indexOf(mode);
         const next = order[(idx + 1) % order.length];
 
-        if (next === 'preview') {
-          posthog?.capture('preview_navigated', {
-            trigger: 'keyboard',
-            direction: 'forward',
-            timestamp: new Date().toISOString(),
-            source: 'frontend',
-          });
-        } else if (next === 'diffs') {
-          posthog?.capture('diffs_navigated', {
-            trigger: 'keyboard',
-            direction: 'forward',
-            timestamp: new Date().toISOString(),
-            source: 'frontend',
-          });
-        }
+        // telemetry disabled
 
         cycleViewForward();
       } else if (selectedTask) {
@@ -592,21 +577,7 @@ export function ProjectTasks() {
         const idx = order.indexOf(mode);
         const next = order[(idx - 1 + order.length) % order.length];
 
-        if (next === 'preview') {
-          posthog?.capture('preview_navigated', {
-            trigger: 'keyboard',
-            direction: 'backward',
-            timestamp: new Date().toISOString(),
-            source: 'frontend',
-          });
-        } else if (next === 'diffs') {
-          posthog?.capture('diffs_navigated', {
-            trigger: 'keyboard',
-            direction: 'backward',
-            timestamp: new Date().toISOString(),
-            source: 'frontend',
-          });
-        }
+        // telemetry disabled
 
         cycleViewBackward();
       }

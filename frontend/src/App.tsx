@@ -6,7 +6,6 @@ import { Projects } from '@/pages/Projects';
 import { ProjectTasks } from '@/pages/ProjectTasks';
 import { FullAttemptLogsPage } from '@/pages/FullAttemptLogs';
 import { NormalLayout } from '@/components/layout/NormalLayout';
-import { usePostHog } from 'posthog-js/react';
 import { useAuth } from '@/hooks';
 import { usePreviousPath } from '@/hooks/usePreviousPath';
 
@@ -26,7 +25,6 @@ import { HotkeysProvider } from 'react-hotkeys-hook';
 
 import { ProjectProvider } from '@/contexts/ProjectContext';
 import { ThemeMode } from 'shared/types';
-import * as Sentry from '@sentry/react';
 import { Loader } from '@/components/ui/loader';
 
 import { DisclaimerDialog } from '@/components/dialogs/global/DisclaimerDialog';
@@ -35,30 +33,17 @@ import { ReleaseNotesDialog } from '@/components/dialogs/global/ReleaseNotesDial
 import { ClickedElementsProvider } from './contexts/ClickedElementsProvider';
 import NiceModal from '@ebay/nice-modal-react';
 
-const SentryRoutes = Sentry.withSentryReactRouterV6Routing(Routes);
+const SentryRoutes = Routes;
 
 function AppContent() {
   const { config, analyticsUserId, updateAndSaveConfig, loading } =
     useUserSystem();
-  const posthog = usePostHog();
   const { isSignedIn } = useAuth();
 
   // Track previous path for back navigation
   usePreviousPath();
 
-  // Handle opt-in/opt-out and user identification when config loads
-  useEffect(() => {
-    if (!posthog || !analyticsUserId) return;
-
-    if (config?.analytics_enabled) {
-      posthog.opt_in_capturing();
-      posthog.identify(analyticsUserId);
-      console.log('[Analytics] Analytics enabled and user identified');
-    } else {
-      posthog.opt_out_capturing();
-      console.log('[Analytics] Analytics disabled by user preference');
-    }
-  }, [config?.analytics_enabled, analyticsUserId, posthog]);
+  // Telemetry disabled: PostHog opt-in/identify skipped.
 
   useEffect(() => {
     if (!config) return;

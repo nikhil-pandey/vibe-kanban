@@ -81,7 +81,7 @@ impl EventService {
     pub fn create_hook(
         msg_store: Arc<MsgStore>,
         entry_count: Arc<RwLock<usize>>,
-        db_service: DBService,
+        db_service: Arc<std::sync::OnceLock<DBService>>,
     ) -> impl for<'a> Fn(
         &'a mut sqlx::sqlite::SqliteConnection,
     ) -> std::pin::Pin<
@@ -92,7 +92,7 @@ impl EventService {
         move |conn: &mut sqlx::sqlite::SqliteConnection| {
             let msg_store_for_hook = msg_store.clone();
             let entry_count_for_hook = entry_count.clone();
-            let db_for_hook = db_service.clone();
+            let db_cell_for_hook = db_service.clone();
             Box::pin(async move {
                 let mut handle = conn.lock_handle().await?;
                 let runtime_handle = tokio::runtime::Handle::current();
@@ -158,7 +158,12 @@ impl EventService {
                     let runtime_handle = runtime_handle.clone();
                     let entry_count_for_hook = entry_count_for_hook.clone();
                     let msg_store_for_hook = msg_store_for_hook.clone();
-                    let db = db_for_hook.clone();
+                    let db_cell = db_cell_for_hook.clone();
+                    let Some(db) = db_cell.get() else {
+                        tracing::warn!("DB service not initialized for update hook");
+                        return;
+                    };
+                    let db = db.clone();
 
                     if let Ok(table) = HookTables::from_str(hook.table) {
                         let rowid = hook.rowid;

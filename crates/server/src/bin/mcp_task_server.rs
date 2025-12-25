@@ -1,13 +1,10 @@
 use rmcp::{ServiceExt, transport::stdio};
 use server::mcp::task_server::TaskServer;
 use tracing_subscriber::{EnvFilter, prelude::*};
-use utils::{
-    port_file::read_port_file,
-    sentry::{self as sentry_utils, SentrySource, sentry_layer},
-};
+use utils::port_file::read_port_file;
 
 fn main() -> anyhow::Result<()> {
-    sentry_utils::init_once(SentrySource::Mcp);
+    // Telemetry disabled
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -19,7 +16,7 @@ fn main() -> anyhow::Result<()> {
                         .with_writer(std::io::stderr)
                         .with_filter(EnvFilter::new("debug")),
                 )
-                .with(sentry_layer())
+                // .with(sentry_layer())
                 .init();
 
             let version = env!("CARGO_PKG_VERSION");

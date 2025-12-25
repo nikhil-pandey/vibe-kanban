@@ -52,65 +52,8 @@ impl AnalyticsService {
     }
 
     pub fn track_event(&self, user_id: &str, event_name: &str, properties: Option<Value>) {
-        let endpoint = format!(
-            "{}/capture/",
-            self.config.posthog_api_endpoint.trim_end_matches('/')
-        );
-
-        let mut payload = json!({
-            "api_key": self.config.posthog_api_key,
-            "event": event_name,
-            "distinct_id": user_id,
-        });
-        if event_name == "$identify" {
-            // For $identify, set person properties in $set
-            if let Some(props) = properties {
-                payload["$set"] = props;
-            }
-        } else {
-            // For other events, use properties as before
-            let mut event_properties = properties.unwrap_or_else(|| json!({}));
-            if let Some(props) = event_properties.as_object_mut() {
-                props.insert(
-                    "timestamp".to_string(),
-                    json!(chrono::Utc::now().to_rfc3339()),
-                );
-                props.insert("version".to_string(), json!(env!("CARGO_PKG_VERSION")));
-                props.insert("device".to_string(), get_device_info());
-                props.insert("source".to_string(), json!("backend"));
-            }
-            payload["properties"] = event_properties;
-        }
-
-        let client = self.client.clone();
-        let event_name = event_name.to_string();
-
-        tokio::spawn(async move {
-            match client
-                .post(&endpoint)
-                .header("Content-Type", "application/json")
-                .json(&payload)
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        tracing::debug!("Event '{}' sent successfully", event_name);
-                    } else {
-                        let status = response.status();
-                        let response_text = response.text().await.unwrap_or_default();
-                        tracing::error!(
-                            "Failed to send event. Status: {}. Response: {}",
-                            status,
-                            response_text
-                        );
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Error sending event '{}': {}", event_name, e);
-                }
-            }
-        });
+        let _ = (user_id, event_name, properties);
+        // Telemetry disabled: no-op
     }
 }
 

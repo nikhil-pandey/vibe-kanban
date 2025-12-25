@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 use ts_rs::TS;
 use utils::log_msg::LogMsg;
 use uuid::Uuid;
@@ -63,6 +63,32 @@ impl ExecutionProcessLogs {
         )
         .execute(pool)
         .await?;
+
+        Ok(())
+    }
+
+    /// Append multiple JSONL lines in a single insert to reduce lock contention
+    pub async fn append_log_lines(
+        pool: &SqlitePool,
+        execution_id: Uuid,
+        jsonl_lines: &[String],
+    ) -> Result<(), sqlx::Error> {
+        if jsonl_lines.is_empty() {
+            return Ok(());
+        }
+
+        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+            "INSERT INTO execution_process_logs (execution_id, logs, byte_size, inserted_at) ",
+        );
+
+        builder.push_values(jsonl_lines, |mut b, line| {
+            b.push_bind(execution_id);
+            b.push_bind(line);
+            b.push_bind(line.len() as i64);
+            b.push("datetime('now', 'subsec')");
+        });
+
+        builder.build().execute(pool).await?;
 
         Ok(())
     }

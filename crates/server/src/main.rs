@@ -10,7 +10,6 @@ use utils::{
     assets::asset_dir,
     browser::open_browser,
     port_file::write_port_file,
-    sentry::{self as sentry_utils, SentrySource, sentry_layer},
 };
 
 #[derive(Debug, Error)]
@@ -27,7 +26,7 @@ pub enum VibeKanbanError {
 
 #[tokio::main]
 async fn main() -> Result<(), VibeKanbanError> {
-    sentry_utils::init_once(SentrySource::Backend);
+    // Telemetry disabled
 
     let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
     let filter_string = format!(
@@ -37,7 +36,7 @@ async fn main() -> Result<(), VibeKanbanError> {
     let env_filter = EnvFilter::try_new(filter_string).expect("Failed to create tracing filter");
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_filter(env_filter))
-        .with(sentry_layer())
+        // .with(sentry_layer())
         .init();
 
     // Create asset directory if it doesn't exist
@@ -46,7 +45,7 @@ async fn main() -> Result<(), VibeKanbanError> {
     }
 
     let deployment = DeploymentImpl::new().await?;
-    deployment.update_sentry_scope().await?;
+    // deployment.update_sentry_scope().await?;
     deployment
         .container()
         .cleanup_orphan_executions()

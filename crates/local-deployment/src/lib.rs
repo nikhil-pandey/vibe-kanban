@@ -103,15 +103,19 @@ impl Deployment for LocalDeployment {
         // Create shared components for EventService
         let events_msg_store = Arc::new(MsgStore::new());
         let events_entry_count = Arc::new(RwLock::new(0));
+        let db_cell: Arc<std::sync::OnceLock<DBService>> =
+            Arc::new(std::sync::OnceLock::new());
 
         // Create DB with event hooks
         let db = {
             let hook = EventService::create_hook(
                 events_msg_store.clone(),
                 events_entry_count.clone(),
-                DBService::new().await?, // Temporary DB service for the hook
+                db_cell.clone(),
             );
-            DBService::new_with_after_connect(hook).await?
+            let db = DBService::new_with_after_connect(hook).await?;
+            let _ = db_cell.set(db.clone());
+            db
         };
 
         let image = ImageService::new(db.clone().pool)?;

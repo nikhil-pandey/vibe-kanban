@@ -30,40 +30,13 @@ fn environment() -> &'static str {
     }
 }
 
-pub fn init_once(source: SentrySource) {
-    INIT_GUARD.get_or_init(|| {
-        sentry::init((
-            SENTRY_DSN,
-            sentry::ClientOptions {
-                release: sentry::release_name!(),
-                environment: Some(environment().into()),
-                ..Default::default()
-            },
-        ))
-    });
-
-    sentry::configure_scope(|scope| {
-        scope.set_tag("source", source.tag());
-    });
+// Telemetry disabled: keep API surface but make it a no-op.
+pub fn init_once(_source: SentrySource) {
+    let _ = &INIT_GUARD;
 }
 
-pub fn configure_user_scope(user_id: &str, username: Option<&str>, email: Option<&str>) {
-    let mut sentry_user = sentry::User {
-        id: Some(user_id.to_string()),
-        ..Default::default()
-    };
-
-    if let Some(username) = username {
-        sentry_user.username = Some(username.to_string());
-    }
-
-    if let Some(email) = email {
-        sentry_user.email = Some(email.to_string());
-    }
-
-    sentry::configure_scope(|scope| {
-        scope.set_user(Some(sentry_user));
-    });
+pub fn configure_user_scope(_user_id: &str, _username: Option<&str>, _email: Option<&str>) {
+    // no-op
 }
 
 pub fn sentry_layer<S>() -> SentryLayer<S>
@@ -71,16 +44,5 @@ where
     S: tracing::Subscriber,
     S: for<'a> tracing_subscriber::registry::LookupSpan<'a>,
 {
-    SentryLayer::default()
-        .span_filter(|meta| {
-            matches!(
-                *meta.level(),
-                Level::DEBUG | Level::INFO | Level::WARN | Level::ERROR
-            )
-        })
-        .event_filter(|meta| match *meta.level() {
-            Level::ERROR => EventFilter::Event,
-            Level::DEBUG | Level::INFO | Level::WARN => EventFilter::Breadcrumb,
-            Level::TRACE => EventFilter::Ignore,
-        })
+    SentryLayer::default().event_filter(|_meta| EventFilter::Ignore)
 }
