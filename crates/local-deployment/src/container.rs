@@ -1121,61 +1121,78 @@ impl ContainerService for LocalContainerService {
         execution_process: &ExecutionProcess,
         status: ExecutionProcessStatus,
     ) -> Result<(), ContainerError> {
-        let child = self
-            .get_child_from_store(&execution_process.id)
-            .await
-            .ok_or_else(|| {
-                ContainerError::Other(anyhow!("Child process not found for execution"))
-            })?;
+        // If already terminal, treat as no-op
+        if matches!(
+            execution_process.status,
+            ExecutionProcessStatus::Completed
+                | ExecutionProcessStatus::Failed
+                | ExecutionProcessStatus::Killed
+        ) {
+            return Ok(());
+        }
+
+        let child = self.get_child_from_store(&execution_process.id).await;
+        let status_to_set = status.clone();
         let exit_code = if status == ExecutionProcessStatus::Completed {
             Some(0)
         } else {
             None
         };
 
-        ExecutionProcess::update_completion(&self.db.pool, execution_process.id, status, exit_code)
+        ExecutionProcess::update_completion(&self.db.pool, execution_process.id, status_to_set, exit_code)
             .await?;
 
         // Try graceful interrupt first, then force kill
-        if let Some(interrupt_sender) = self.take_interrupt_sender(&execution_process.id).await {
-            // Send interrupt signal (ignore error if receiver dropped)
-            let _ = interrupt_sender.send(());
+        if let Some(child) = &child {
+            if let Some(interrupt_sender) = self.take_interrupt_sender(&execution_process.id).await
+            {
+                // Send interrupt signal (ignore error if receiver dropped)
+                let _ = interrupt_sender.send(());
 
-            // Wait for graceful exit with timeout
-            let graceful_exit = {
-                let mut child_guard = child.write().await;
-                tokio::time::timeout(Duration::from_secs(5), child_guard.wait()).await
-            };
+                // Wait for graceful exit with timeout
+                let graceful_exit = {
+                    let mut child_guard = child.write().await;
+                    tokio::time::timeout(Duration::from_secs(5), child_guard.wait()).await
+                };
 
-            match graceful_exit {
-                Ok(Ok(_)) => {
-                    tracing::debug!(
-                        "Process {} exited gracefully after interrupt",
-                        execution_process.id
-                    );
-                }
-                Ok(Err(e)) => {
-                    tracing::info!("Error waiting for process {}: {}", execution_process.id, e);
-                }
-                Err(_) => {
-                    tracing::debug!(
-                        "Graceful shutdown timed out for process {}, force killing",
-                        execution_process.id
-                    );
+                match graceful_exit {
+                    Ok(Ok(_)) => {
+                        tracing::debug!(
+                            "Process {} exited gracefully after interrupt",
+                            execution_process.id
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        tracing::info!("Error waiting for process {}: {}", execution_process.id, e);
+                    }
+                    Err(_) => {
+                        tracing::debug!(
+                            "Graceful shutdown timed out for process {}, force killing",
+                            execution_process.id
+                        );
+                    }
                 }
             }
+        } else {
+            tracing::warn!(
+                "Process {} missing child handle during stop; marking status {:?}",
+                execution_process.id,
+                status
+            );
         }
 
         // Kill the child process and remove from the store
-        {
-            let mut child_guard = child.write().await;
-            if let Err(e) = command::kill_process_group(&mut child_guard).await {
-                tracing::error!(
-                    "Failed to stop execution process {}: {}",
-                    execution_process.id,
-                    e
-                );
-                return Err(e);
+        if let Some(child) = child {
+            {
+                let mut child_guard = child.write().await;
+                if let Err(e) = command::kill_process_group(&mut child_guard).await {
+                    tracing::error!(
+                        "Failed to stop execution process {}: {}",
+                        execution_process.id,
+                        e
+                    );
+                    return Err(e);
+                }
             }
         }
         self.remove_child_from_store(&execution_process.id).await;
