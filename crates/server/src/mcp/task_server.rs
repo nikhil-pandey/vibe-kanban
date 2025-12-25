@@ -1,4 +1,4 @@
-use std::{future::Future, str::FromStr};
+use std::{collections::HashSet, future::Future, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use db::models::{
@@ -15,7 +15,8 @@ use rmcp::{
     ErrorData, ServerHandler,
     handler::server::tool::{Parameters, ToolRouter},
     model::{
-        CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
+        CallToolResult, Content, Implementation, JsonObject, ProtocolVersion, ServerCapabilities,
+        ServerInfo,
     },
     schemars, tool, tool_handler, tool_router,
 };
@@ -82,6 +83,37 @@ impl ProjectSummary {
             created_at: project.created_at.to_rfc3339(),
             updated_at: project.updated_at.to_rfc3339(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn create_tasks_schema_uses_object_items() {
+        let router = TaskServer::tool_router();
+        let tool = router
+            .map
+            .get("create_tasks")
+            .expect("create_tasks tool is registered");
+
+        let schema = Value::Object((*tool.attr.input_schema).clone());
+        let item_type = schema
+            .pointer("/properties/tasks/items/type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert_eq!(
+            item_type, "object",
+            "tasks should accept objects with title/description"
+        );
+
+        let title_type = schema
+            .pointer("/properties/tasks/items/properties/title/type")
+            .and_then(Value::as_str);
+        assert_eq!(title_type, Some("string"));
     }
 }
 
@@ -851,9 +883,88 @@ impl TaskServer {
 
         Ok(first_repo.repo_id)
     }
+
+    fn tool_router() -> ToolRouter<TaskServer> {
+        let mut router = Self::raw_tool_router();
+        Self::inline_tool_schemas(&mut router);
+        router
+    }
+
+    fn inline_tool_schemas(router: &mut ToolRouter<TaskServer>) {
+        for route in router.map.values_mut() {
+            let inlined = Self::inline_schema(&route.attr.input_schema);
+            route.attr.input_schema = inlined;
+        }
+    }
+
+    fn inline_schema(schema: &Arc<JsonObject>) -> Arc<JsonObject> {
+        let mut value = serde_json::Value::Object((**schema).clone());
+        let definitions = value
+            .get("definitions")
+            .and_then(serde_json::Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+
+        if let serde_json::Value::Object(obj) = &mut value {
+            obj.remove("definitions");
+        }
+
+        let mut visiting = HashSet::new();
+        let inlined = Self::inline_refs(&value, &definitions, &mut visiting);
+        match inlined {
+            serde_json::Value::Object(obj) => Arc::new(obj),
+            other => {
+                tracing::warn!("Unexpected schema format when inlining MCP tool params: {other:?}");
+                Arc::new(rmcp::model::object(other))
+            }
+        }
+    }
+
+    fn inline_refs(
+        value: &serde_json::Value,
+        definitions: &serde_json::Map<String, serde_json::Value>,
+        visiting: &mut HashSet<String>,
+    ) -> serde_json::Value {
+        if let Some(ref_key) = value
+            .as_object()
+            .and_then(|obj| obj.get("$ref"))
+            .and_then(serde_json::Value::as_str)
+            .and_then(|s| s.strip_prefix("#/definitions/"))
+        {
+            if !visiting.insert(ref_key.to_string()) {
+                return value.clone();
+            }
+
+            if let Some(def_schema) = definitions.get(ref_key) {
+                let replaced = Self::inline_refs(def_schema, definitions, visiting);
+                visiting.remove(ref_key);
+                return replaced;
+            }
+        }
+
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut next = serde_json::Map::with_capacity(map.len());
+                for (k, v) in map {
+                    if k == "definitions" {
+                        continue;
+                    }
+                    next.insert(k.clone(), Self::inline_refs(v, definitions, visiting));
+                }
+                serde_json::Value::Object(next)
+            }
+            serde_json::Value::Array(items) => serde_json::Value::Array(
+                items
+                    .iter()
+                    .map(|item| Self::inline_refs(item, definitions, visiting))
+                    .collect(),
+            ),
+            _ => value.clone(),
+        }
+    }
 }
 
-#[tool_router]
+#[tool_router(router = raw_tool_router)]
 impl TaskServer {
     #[tool(
         description = "Return project, task, and workspace metadata for the current workspace session context."
