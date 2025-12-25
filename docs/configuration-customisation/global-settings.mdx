@@ -33,6 +33,7 @@ Configure integration with your preferred code editor for a seamless development
 
 Choose from various supported editors:
 - **VS Code** - Microsoft's popular code editor
+- **VS Code Insiders** - Preview build of VS Code
 - **Cursor** - VSCode fork with AI-native features
 - **Windsurf** - VSCode fork optimized for collaborative development
 - **Neovim**, **Emacs**, **Sublime Text** - Other popular editors
@@ -46,7 +47,7 @@ Choose from various supported editors:
 
 When running Vibe Kanban on a remote server (e.g., accessed via Cloudflare tunnel, ngrok, or as a systemctl service), you can configure VSCode-based editors to open projects via SSH instead of assuming localhost.
 
-This feature is available for **VS Code**, **Cursor**, and **Windsurf** editors.
+This feature is available for **VS Code**, **VS Code Insiders**, **Cursor**, and **Windsurf** editors.
 
 #### When to Use Remote SSH
 
@@ -70,7 +71,7 @@ Enable remote SSH configuration when:
 #### How It Works
 
 When remote SSH is configured, clicking "Open in VSCode" (or Cursor/Windsurf):
-1. Generates a special protocol URL like: `vscode://vscode-remote/ssh-remote+user@host/path/to/project`
+1. Generates a special protocol URL like: `vscode://vscode-remote/ssh-remote+user@host/path/to/project` (or `vscode-insiders://...` for Insiders)
 2. Opens in your default browser, which launches your local editor
 3. Your editor connects to the remote server via SSH
 4. The project or task worktree opens in the remote context

@@ -45,6 +45,7 @@ pub struct EditorConfig {
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum EditorType {
     VsCode,
+    VsCodeInsiders,
     Cursor,
     Windsurf,
     IntelliJ,
@@ -83,6 +84,7 @@ impl EditorConfig {
     pub fn get_command(&self) -> CommandBuilder {
         let base_command = match &self.editor_type {
             EditorType::VsCode => "code",
+            EditorType::VsCodeInsiders => "code-insiders",
             EditorType::Cursor => "cursor",
             EditorType::Windsurf => "windsurf",
             EditorType::IntelliJ => "idea",
@@ -140,6 +142,7 @@ impl EditorConfig {
         let remote_host = self.remote_ssh_host.as_ref()?;
         let scheme = match self.editor_type {
             EditorType::VsCode => "vscode",
+            EditorType::VsCodeInsiders => "vscode-insiders",
             EditorType::Cursor => "cursor",
             EditorType::Windsurf => "windsurf",
             _ => return None,

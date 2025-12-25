@@ -21,6 +21,8 @@ export function getIdeName(editorType: EditorType | undefined | null): string {
   switch (editorType) {
     case EditorType.VS_CODE:
       return 'VS Code';
+    case EditorType.VS_CODE_INSIDERS:
+      return 'VS Code Insiders';
     case EditorType.CURSOR:
       return 'Cursor';
     case EditorType.WINDSURF:
@@ -51,6 +53,7 @@ export function IdeIcon({ editorType, className = 'h-4 w-4' }: IdeIconProps) {
 
   switch (editorType) {
     case EditorType.VS_CODE:
+    case EditorType.VS_CODE_INSIDERS:
       ideIconPath = isDark ? '/ide/vscode-dark.svg' : '/ide/vscode-light.svg';
       break;
     case EditorType.CURSOR:
