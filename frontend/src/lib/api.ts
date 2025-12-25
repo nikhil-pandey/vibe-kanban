@@ -30,6 +30,7 @@ import {
   Tag,
   TagSearchParams,
   TaskWithAttemptStatus,
+  TaskWithAttemptStatusAndProject,
   UpdateProject,
   UpdateTask,
   UpdateTag,
@@ -387,6 +388,11 @@ export const projectsApi = {
 
 // Task Management APIs
 export const tasksApi = {
+  getAll: async (): Promise<TaskWithAttemptStatusAndProject[]> => {
+    const response = await makeRequest(`/api/all-tasks`);
+    return handleApiResponse<TaskWithAttemptStatusAndProject[]>(response);
+  },
+
   getById: async (taskId: string): Promise<Task> => {
     const response = await makeRequest(`/api/tasks/${taskId}`);
     return handleApiResponse<Task>(response);

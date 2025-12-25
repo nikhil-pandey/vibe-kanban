@@ -19,18 +19,21 @@ interface ProjectContextValue {
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
 
-interface ProjectProviderProps {
+export interface ProjectProviderProps {
   children: ReactNode;
+  /** Optionally provide projectId directly instead of extracting from URL */
+  projectId?: string;
 }
 
-export function ProjectProvider({ children }: ProjectProviderProps) {
+export function ProjectProvider({ children, projectId: propProjectId }: ProjectProviderProps) {
   const location = useLocation();
 
-  // Extract projectId from current route path
+  // Extract projectId from current route path, or use prop if provided
   const projectId = useMemo(() => {
+    if (propProjectId) return propProjectId;
     const match = location.pathname.match(/^\/projects\/([^/]+)/);
     return match ? match[1] : undefined;
-  }, [location.pathname]);
+  }, [location.pathname, propProjectId]);
 
   const { projectsById, isLoading, error } = useProjects();
   const project = projectId ? projectsById[projectId] : undefined;

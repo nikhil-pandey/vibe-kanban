@@ -3,7 +3,7 @@ use db::models::{
     project::Project,
     scratch::Scratch,
     session::Session,
-    task::{Task, TaskWithAttemptStatus},
+    task::{Task, TaskWithAttemptStatus, TaskWithAttemptStatusAndProject},
 };
 use futures::StreamExt;
 use serde_json::json;
@@ -136,6 +136,141 @@ impl EventService {
                         }
                         Ok(other) => Some(Ok(other)), // Pass through non-patch messages
                         Err(_) => None,               // Filter out broadcast errors
+                    }
+                }
+            });
+
+        // Start with initial snapshot, then live updates
+        let initial_stream = futures::stream::once(async move { Ok(initial_msg) });
+        let combined_stream = initial_stream.chain(filtered_stream).boxed();
+
+        Ok(combined_stream)
+    }
+
+    /// Stream all tasks across all projects with initial snapshot (for unified dashboard)
+    pub async fn stream_all_tasks_raw(
+        &self,
+    ) -> Result<futures::stream::BoxStream<'static, Result<LogMsg, std::io::Error>>, EventError>
+    {
+        // Get initial snapshot of all tasks with project names
+        let tasks = Task::find_all_with_attempt_status_and_project(&self.db.pool).await?;
+
+        // Convert task array to object keyed by task ID
+        let tasks_map: serde_json::Map<String, serde_json::Value> = tasks
+            .into_iter()
+            .map(|task| (task.id.to_string(), serde_json::to_value(task).unwrap()))
+            .collect();
+
+        let initial_patch = json!([
+            {
+                "op": "replace",
+                "path": "/tasks",
+                "value": tasks_map
+            }
+        ]);
+        let initial_msg = LogMsg::JsonPatch(serde_json::from_value(initial_patch).unwrap());
+
+        let db_pool = self.db.pool.clone();
+
+        // Helper to build full snapshot
+        fn build_all_tasks_snapshot(
+            tasks: Vec<TaskWithAttemptStatusAndProject>,
+        ) -> LogMsg {
+            let tasks_map: serde_json::Map<String, serde_json::Value> = tasks
+                .into_iter()
+                .map(|task| (task.id.to_string(), serde_json::to_value(task).unwrap()))
+                .collect();
+
+            let patch = json!([
+                {
+                    "op": "replace",
+                    "path": "/tasks",
+                    "value": tasks_map
+                }
+            ]);
+
+            LogMsg::JsonPatch(serde_json::from_value(patch).unwrap())
+        }
+
+        // Get unfiltered event stream - pass through all task events
+        let filtered_stream =
+            BroadcastStream::new(self.msg_store.get_receiver()).filter_map(move |msg_result| {
+                let db_pool = db_pool.clone();
+                async move {
+                    match msg_result {
+                        Ok(LogMsg::JsonPatch(patch)) => {
+                            // Pass through all task patches
+                            if let Some(patch_op) = patch.0.first() {
+                                // Check if this is a task-related patch
+                                if patch_op.path().starts_with("/tasks/") {
+                                    // For task events, we need to enrich with project_name
+                                    // Since updates come as TaskWithAttemptStatus (no project_name),
+                                    // we need to fetch the full data from DB
+                                    // Helper to extract value from Add or Replace operations
+                                    let value = match patch_op {
+                                        json_patch::PatchOperation::Add(op) => Some(&op.value),
+                                        json_patch::PatchOperation::Replace(op) => Some(&op.value),
+                                        json_patch::PatchOperation::Remove(_) => {
+                                            // Pass through remove operations as-is
+                                            return Some(Ok(LogMsg::JsonPatch(patch)));
+                                        }
+                                        _ => None,
+                                    };
+
+                                    if let Some(value) = value {
+                                        if let Ok(task) =
+                                            serde_json::from_value::<TaskWithAttemptStatus>(
+                                                value.clone(),
+                                            )
+                                        {
+                                            // Fetch project name to enrich the task
+                                            if let Ok(Some(project)) =
+                                                Project::find_by_id(&db_pool, task.project_id).await
+                                            {
+                                                let enriched = TaskWithAttemptStatusAndProject {
+                                                    task: task.task.clone(),
+                                                    has_in_progress_attempt: task.has_in_progress_attempt,
+                                                    last_attempt_failed: task.last_attempt_failed,
+                                                    executor: task.executor.clone(),
+                                                    project_name: project.name,
+                                                };
+                                                let new_patch = json!([
+                                                    {
+                                                        "op": "replace",
+                                                        "path": format!("/tasks/{}", task.id),
+                                                        "value": enriched
+                                                    }
+                                                ]);
+                                                return Some(Ok(LogMsg::JsonPatch(
+                                                    serde_json::from_value(new_patch).unwrap(),
+                                                )));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            None
+                        }
+                        Ok(other) => Some(Ok(other)), // Pass through non-patch messages
+                        Err(BroadcastStreamRecvError::Lagged(skipped)) => {
+                            tracing::warn!(
+                                skipped = skipped,
+                                "all-tasks stream lagged; resyncing snapshot"
+                            );
+
+                            match Task::find_all_with_attempt_status_and_project(&db_pool).await {
+                                Ok(tasks) => Some(Ok(build_all_tasks_snapshot(tasks))),
+                                Err(err) => {
+                                    tracing::error!(
+                                        error = %err,
+                                        "failed to resync all-tasks after lag"
+                                    );
+                                    Some(Err(std::io::Error::other(format!(
+                                        "failed to resync all-tasks after lag: {err}"
+                                    ))))
+                                }
+                            }
+                        }
                     }
                 }
             });

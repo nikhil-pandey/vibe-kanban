@@ -6,6 +6,7 @@ use axum::{
 use crate::DeploymentImpl;
 use crate::middleware::request_timing;
 
+pub mod all_tasks;
 pub mod approvals;
 pub mod config;
 pub mod containers;
@@ -32,6 +33,7 @@ pub fn router(deployment: DeploymentImpl) -> IntoMakeService<Router> {
     let base_routes = Router::new()
         .route("/health", get(health::health_check))
         .merge(config::router())
+        .merge(all_tasks::router())
         .merge(containers::router(&deployment))
         .merge(projects::router(&deployment))
         .merge(tasks::router(&deployment))
