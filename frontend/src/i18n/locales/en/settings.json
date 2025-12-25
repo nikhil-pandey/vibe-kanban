@@ -241,6 +241,11 @@
           "resumeOnRestart": {
             "label": "Resume tasks on restart",
             "helper": "When enabled, interrupted tasks will be automatically resumed when the server restarts."
+          },
+          "resumePrompt": {
+            "label": "Resume prompt",
+            "helper": "The message sent to the agent when resuming an interrupted task.",
+            "placeholder": "[Process restarted. Continue]"
           }
         }
       },

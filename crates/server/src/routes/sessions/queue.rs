@@ -2,7 +2,11 @@ use axum::{
     Extension, Json, Router, extract::State, middleware::from_fn_with_state,
     response::Json as ResponseJson, routing::get,
 };
-use db::models::{scratch::DraftFollowUpData, session::Session};
+use db::models::{
+    scratch::DraftFollowUpData,
+    session::Session,
+    task_queue::{SessionQueueStatus, TaskQueueEntry},
+};
 use deployment::Deployment;
 use serde::Deserialize;
 use services::services::queued_message::QueueStatus;
@@ -80,6 +84,60 @@ pub async fn get_queue_status(
     Ok(ResponseJson(ApiResponse::success(status)))
 }
 
+/// Get the session's position in the persistent task queue
+pub async fn get_task_queue_status(
+    Extension(session): Extension<Session>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<SessionQueueStatus>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Check if this session has a pending entry in the task queue
+    let entry = TaskQueueEntry::find_pending_for_session(pool, session.id).await?;
+    let is_queued = entry.is_some();
+
+    // Get position if there's a pending entry
+    let position = if is_queued {
+        TaskQueueEntry::get_position(pool, session.id).await?
+    } else {
+        None
+    };
+
+    Ok(ResponseJson(ApiResponse::success(SessionQueueStatus {
+        is_queued,
+        entry,
+        position,
+    })))
+}
+
+/// Cancel a session's pending task queue entry
+pub async fn cancel_task_queue(
+    Extension(session): Extension<Session>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<SessionQueueStatus>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    // Find and cancel any pending entry for this session
+    if let Some(entry) = TaskQueueEntry::find_pending_for_session(pool, session.id).await? {
+        TaskQueueEntry::cancel(pool, entry.id).await?;
+
+        deployment
+            .track_if_analytics_allowed(
+                "task_queue_cancelled",
+                serde_json::json!({
+                    "session_id": session.id.to_string(),
+                    "entry_id": entry.id.to_string(),
+                }),
+            )
+            .await;
+    }
+
+    Ok(ResponseJson(ApiResponse::success(SessionQueueStatus {
+        is_queued: false,
+        entry: None,
+        position: None,
+    })))
+}
+
 pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     Router::new()
         .route(
@@ -87,6 +145,10 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
             get(get_queue_status)
                 .post(queue_message)
                 .delete(cancel_queued_message),
+        )
+        .route(
+            "/task-queue",
+            get(get_task_queue_status).delete(cancel_task_queue),
         )
         .layer(from_fn_with_state(
             deployment.clone(),

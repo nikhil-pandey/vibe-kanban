@@ -80,6 +80,11 @@ pub struct QueueConfig {
     /// Whether to auto-resume interrupted tasks on server restart
     #[serde(default = "default_resume_on_restart")]
     pub resume_on_restart: bool,
+
+    /// Custom prompt prefix to add when resuming an interrupted task
+    /// Use {original_prompt} as placeholder for the original prompt
+    #[serde(default = "default_resume_prompt")]
+    pub resume_prompt: String,
 }
 
 fn default_queue_enabled() -> bool {
@@ -90,11 +95,16 @@ fn default_resume_on_restart() -> bool {
     true
 }
 
+fn default_resume_prompt() -> String {
+    "[Process restarted. Continue]".to_string()
+}
+
 impl Default for QueueConfig {
     fn default() -> Self {
         Self {
             enabled: true,
             resume_on_restart: true,
+            resume_prompt: default_resume_prompt(),
         }
     }
 }

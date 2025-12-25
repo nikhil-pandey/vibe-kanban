@@ -90,6 +90,15 @@ pub struct QueueDepth {
     pub by_executor: HashMap<String, u32>,
 }
 
+/// Status of a session's position in the task queue
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SessionQueueStatus {
+    pub is_queued: bool,
+    pub entry: Option<TaskQueueEntry>,
+    pub position: Option<QueuePosition>,
+}
+
 impl TaskQueueEntry {
     /// Create a new queue entry
     pub async fn create(

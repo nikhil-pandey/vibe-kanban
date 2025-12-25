@@ -355,7 +355,12 @@ enabled: boolean,
 /**
  * Whether to auto-resume interrupted tasks on server restart
  */
-resume_on_restart: boolean, };
+resume_on_restart: boolean, 
+/**
+ * Custom prompt prefix to add when resuming an interrupted task
+ * Use {original_prompt} as placeholder for the original prompt
+ */
+resume_prompt: string, };
 
 export type ConcurrencyStats = { 
 /**

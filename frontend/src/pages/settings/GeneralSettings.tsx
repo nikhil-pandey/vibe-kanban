@@ -911,6 +911,32 @@ export function GeneralSettings() {
                   </p>
                 </div>
               </div>
+              {draft?.concurrency?.queue?.resume_on_restart && (
+                <div className="space-y-2 ml-6">
+                  <Label htmlFor="queue-resume-prompt" className="text-sm">
+                    {t('settings.general.concurrency.queue.resumePrompt.label')}
+                  </Label>
+                  <Input
+                    id="queue-resume-prompt"
+                    value={draft?.concurrency?.queue?.resume_prompt ?? ''}
+                    placeholder={t('settings.general.concurrency.queue.resumePrompt.placeholder')}
+                    onChange={(e) =>
+                      updateDraft({
+                        concurrency: {
+                          ...draft!.concurrency,
+                          queue: {
+                            ...draft!.concurrency.queue,
+                            resume_prompt: e.target.value,
+                          },
+                        },
+                      })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('settings.general.concurrency.queue.resumePrompt.helper')}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>

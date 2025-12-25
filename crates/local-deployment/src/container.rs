@@ -1498,6 +1498,12 @@ impl ContainerService for LocalContainerService {
         let interrupted = InterruptedExecution::find_not_resumed(&self.db.pool).await?;
         let mut resumed: u32 = 0;
 
+        // Get the resume prompt from config
+        let resume_prompt = {
+            let config = self.config.read().await;
+            config.concurrency.queue.resume_prompt.clone()
+        };
+
         for entry in interrupted {
             // Check if session and workspace still exist
             let session = match db::models::session::Session::find_by_id(&self.db.pool, entry.session_id).await? {
@@ -1536,7 +1542,7 @@ impl ContainerService for LocalContainerService {
                     workspace_id: workspace.id,
                     executor_action: entry.executor_action.clone(),
                     executor_type: entry.executor_type.clone(),
-                    prompt: Some("[Resumed from server restart]".to_string()),
+                    prompt: Some(resume_prompt.clone()),
                     priority: Some(priority),
                 },
             )

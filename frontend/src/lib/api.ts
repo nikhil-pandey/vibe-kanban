@@ -90,6 +90,7 @@ import {
   AbortConflictsRequest,
   Session,
   Workspace,
+  SessionQueueStatus,
 } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { createWorkspaceWithSession } from '@/types/attempt';
@@ -1294,5 +1295,30 @@ export const queueApi = {
   getStatus: async (sessionId: string): Promise<QueueStatus> => {
     const response = await makeRequest(`/api/sessions/${sessionId}/queue`);
     return handleApiResponse<QueueStatus>(response);
+  },
+};
+
+export const taskQueueApi = {
+  /**
+   * Get the session's position in the persistent task queue
+   */
+  getStatus: async (sessionId: string): Promise<SessionQueueStatus> => {
+    const response = await makeRequest(
+      `/api/sessions/${sessionId}/queue/task-queue`
+    );
+    return handleApiResponse<SessionQueueStatus>(response);
+  },
+
+  /**
+   * Cancel a session's pending task queue entry
+   */
+  cancel: async (sessionId: string): Promise<SessionQueueStatus> => {
+    const response = await makeRequest(
+      `/api/sessions/${sessionId}/queue/task-queue`,
+      {
+        method: 'DELETE',
+      }
+    );
+    return handleApiResponse<SessionQueueStatus>(response);
   },
 };
