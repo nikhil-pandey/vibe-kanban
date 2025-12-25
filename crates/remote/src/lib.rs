@@ -22,6 +22,7 @@ use tracing_subscriber::{
     util::SubscriberInitExt,
 };
 
+#[allow(dead_code)]
 static INIT_GUARD: OnceLock<sentry::ClientInitGuard> = OnceLock::new();
 
 pub fn init_tracing() {
@@ -45,6 +46,7 @@ pub fn init_tracing() {
         .init();
 }
 
+#[allow(dead_code)]
 fn environment() -> &'static str {
     if cfg!(debug_assertions) {
         "dev"
@@ -60,6 +62,7 @@ pub fn configure_user_scope(user_id: uuid::Uuid, username: Option<&str>, email: 
     let _ = (user_id, username, email);
 }
 
+#[allow(dead_code)]
 fn sentry_layer<S>() -> SentryLayer<S>
 where
     S: tracing::Subscriber,

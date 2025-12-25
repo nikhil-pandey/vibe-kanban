@@ -1,9 +1,6 @@
 use std::sync::OnceLock;
 
 use sentry_tracing::{EventFilter, SentryLayer};
-use tracing::Level;
-
-const SENTRY_DSN: &str = "https://1065a1d276a581316999a07d5dffee26@o4509603705192449.ingest.de.sentry.io/4509605576441937";
 
 static INIT_GUARD: OnceLock<sentry::ClientInitGuard> = OnceLock::new();
 
@@ -11,23 +8,6 @@ static INIT_GUARD: OnceLock<sentry::ClientInitGuard> = OnceLock::new();
 pub enum SentrySource {
     Backend,
     Mcp,
-}
-
-impl SentrySource {
-    fn tag(self) -> &'static str {
-        match self {
-            SentrySource::Backend => "backend",
-            SentrySource::Mcp => "mcp",
-        }
-    }
-}
-
-fn environment() -> &'static str {
-    if cfg!(debug_assertions) {
-        "dev"
-    } else {
-        "production"
-    }
 }
 
 // Telemetry disabled: keep API surface but make it a no-op.

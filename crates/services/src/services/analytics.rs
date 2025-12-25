@@ -37,8 +37,8 @@ impl AnalyticsConfig {
 
 #[derive(Clone, Debug)]
 pub struct AnalyticsService {
-    config: AnalyticsConfig,
-    client: reqwest::Client,
+    _config: AnalyticsConfig,
+    _client: reqwest::Client,
 }
 
 impl AnalyticsService {
@@ -48,7 +48,10 @@ impl AnalyticsService {
             .build()
             .unwrap();
 
-        Self { config, client }
+        Self {
+            _config: config,
+            _client: client,
+        }
     }
 
     pub fn track_event(&self, user_id: &str, event_name: &str, properties: Option<Value>) {
@@ -113,6 +116,7 @@ pub fn generate_user_id() -> String {
     format!("npm_user_{:016x}", hasher.finish())
 }
 
+#[allow(dead_code)]
 fn get_device_info() -> Value {
     let info = os_info::get();
 
