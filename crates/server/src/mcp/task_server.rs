@@ -431,7 +431,7 @@ impl TaskServer {
 
         match api_response.data {
             Some(data) => Ok(data),
-            // Some VK endpoints (e.g. task deletion) return `success: true` without a
+            // Some VK endpoints (e.g. 202 task deletion) return `success: true` without a
             // `data` payload. Accept these by treating a missing payload as JSON null and
             // attempting to deserialize to the requested type.
             None => serde_json::from_value(serde_json::Value::Null).map_err(|_| {
