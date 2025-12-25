@@ -80,6 +80,9 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 |------|---------|-------------------|-------------------|---------|
 | `start_workspace_session` | Start working on a single task with a coding agent | `task_id`<br/>`executor`<br/>`repos[].base_branch`<br/>`repos[].repo_id` | `variant` | Workspace/attempt ID and confirmation |
 | `start_workspace_sessions` | Start working on many tasks with coding agents | `sessions[].task_id`<br/>`sessions[].executor`<br/>`sessions[].repos[].base_branch`<br/>`sessions[].repos[].repo_id` | `sessions[].variant` | Workspace/attempt IDs and any failures |
+| `get_attempt_diff` | Fetch the code diff for an attempt (falls back to the newest attempt when `latest=true`, using the current task context when available) | `attempt_id` or `latest=true` | `include_stats` (additions/deletions totals) | Attempt metadata and per-repo diffs (paths are prefixed by repo name); optional aggregated stats |
+
+When calling `get_attempt_diff`, omit `attempt_id` and set `latest` to `true` to auto-resolve the newest attempt for the current task (or the most recent attempt overall when no task context is present).
 
 ### Supported Executors
 

@@ -27,6 +27,7 @@ Do not manually edit shared/types.ts, instead edit crates/server/src/bin/generat
 - Generate TS types from Rust: `pnpm run generate-types` (or `generate-types:check` in CI)
 - Prepare SQLx (offline): `pnpm run prepare-db`
 - Prepare SQLx (remote package, postgres): `pnpm run remote:prepare-db`
+- SQLx prepare manual fallback: from `crates/db` run `DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx migrate run && DATABASE_URL=sqlite:$(pwd)/prepare_db.sqlite cargo sqlx prepare`, then remove `prepare_db.sqlite`
 - Local NPX build: `pnpm run build:npx` then `pnpm pack` in `npx-cli/`
 
 ## Coding Style & Naming Conventions

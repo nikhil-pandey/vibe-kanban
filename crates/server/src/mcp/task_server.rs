@@ -6,7 +6,7 @@ use db::models::{
     project_repo::CreateProjectRepo,
     repo::Repo,
     tag::Tag,
-    task::{CreateTask, Task, TaskStatus, TaskStatusWithMerge, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
     workspace::{Workspace, WorkspaceContext},
 };
 use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::routes::{
     containers::ContainerQuery,
-    task_attempts::{CreateTaskAttemptBody, WorkspaceRepoInput},
+    task_attempts::{CreateTaskAttemptBody, TaskAttemptDiffResponse, WorkspaceRepoInput},
 };
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -425,6 +425,21 @@ pub struct GetTasksRequest {
     pub task_ids: Vec<Uuid>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetAttemptDiffRequest {
+    #[schemars(description = "Optional attempt/workspace ID to fetch the diff for")]
+    #[serde(alias = "attemptId")]
+    pub attempt_id: Option<Uuid>,
+    #[schemars(
+        description = "Set to true to fetch the newest attempt (uses the current task context when available)"
+    )]
+    #[serde(default)]
+    pub latest: Option<bool>,
+    #[schemars(description = "Include aggregated stats (additions/deletions) in the response")]
+    #[serde(default, alias = "includeStats")]
+    pub include_stats: Option<bool>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct GetTasksResponse {
     #[schemars(description = "Task details for each requested task")]
@@ -723,6 +738,42 @@ impl TaskServer {
         } else {
             text_parts.join("\n")
         }
+    }
+
+    async fn resolve_attempt_id(
+        &self,
+        attempt_id: Option<Uuid>,
+        latest: bool,
+    ) -> Result<Uuid, CallToolResult> {
+        if let Some(id) = attempt_id {
+            return Ok(id);
+        }
+
+        if !latest {
+            return Err(Self::err(
+                "attempt_id is required unless latest=true",
+                Some("Pass attempt_id or set latest to true to use the newest attempt"),
+            )
+            .unwrap());
+        }
+
+        let mut url = self.url("/api/task-attempts");
+        if let Some(ctx) = &self.context {
+            url.push_str(&format!("?task_id={}", ctx.task_id));
+        }
+
+        let attempts: Vec<Workspace> = match self.send_json(self.client.get(&url)).await {
+            Ok(list) => list,
+            Err(err) => return Err(err),
+        };
+
+        attempts.first().map(|ws| ws.id).ok_or_else(|| {
+            Self::err(
+                "No task attempts found",
+                Some("Start a workspace session or provide an explicit attempt_id"),
+            )
+            .unwrap()
+        })
     }
 }
 
@@ -1471,12 +1522,45 @@ impl TaskServer {
 
         TaskServer::success(&response)
     }
+
+    #[tool(
+        description = "Fetch the code diff for a task attempt. Provide `attempt_id` or set `latest=true` to use the newest attempt (uses the active task context when available). Set `include_stats` to add aggregated additions/deletions."
+    )]
+    async fn get_attempt_diff(
+        &self,
+        Parameters(GetAttemptDiffRequest {
+            attempt_id,
+            latest,
+            include_stats,
+        }): Parameters<GetAttemptDiffRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let use_latest = latest.unwrap_or(attempt_id.is_none());
+        let attempt_id = match self.resolve_attempt_id(attempt_id, use_latest).await {
+            Ok(id) => id,
+            Err(err) => return Ok(err),
+        };
+
+        let mut url = self.url(&format!("/api/task-attempts/{}/diff", attempt_id));
+        if include_stats.unwrap_or(false) {
+            url.push_str("?include_stats=true");
+        }
+
+        let diff = match self
+            .send_json::<TaskAttemptDiffResponse>(self.client.get(&url))
+            .await
+        {
+            Ok(d) => d,
+            Err(err) => return Ok(err),
+        };
+
+        TaskServer::success(&diff)
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'list_tasks_by_status', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'list_tasks_by_status', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'get_attempt_diff', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

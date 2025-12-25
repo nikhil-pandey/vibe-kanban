@@ -8,6 +8,7 @@ pub mod util;
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
+    sync::{Arc, atomic::AtomicUsize},
 };
 
 use axum::{
@@ -21,6 +22,7 @@ use axum::{
     response::{IntoResponse, Json as ResponseJson},
     routing::{get, post},
 };
+use chrono::{DateTime, Utc};
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
     merge::{Merge, MergeStatus, PrMerge, PullRequestInfo},
@@ -44,12 +46,16 @@ use git2::BranchType;
 use serde::{Deserialize, Serialize};
 use services::services::{
     container::ContainerService,
-    git::{ConflictOp, GitCliError, GitServiceError},
+    diff_stream::apply_stream_omit_policy,
+    git::{ConflictOp, DiffTarget, GitCliError, GitServiceError},
     github::GitHubService,
 };
 use sqlx::Error as SqlxError;
 use ts_rs::TS;
-use utils::response::ApiResponse;
+use utils::{
+    diff::{Diff, compute_line_change_counts},
+    response::ApiResponse,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -86,6 +92,64 @@ pub struct TaskAttemptQuery {
 pub struct DiffStreamQuery {
     #[serde(default)]
     pub stats_only: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TaskAttemptDiffQuery {
+    #[serde(default)]
+    pub include_stats: bool,
+    #[serde(default)]
+    pub stats_only: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct TaskAttemptDiffStats {
+    pub files_changed: usize,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct RepoDiffEntry {
+    pub repo_id: Uuid,
+    pub repo_name: String,
+    pub target_branch: String,
+    pub diffs: Vec<Diff>,
+}
+
+#[derive(Debug, Serialize, Deserialize, TS)]
+pub struct TaskAttemptDiffResponse {
+    pub attempt_id: Uuid,
+    pub task_id: Uuid,
+    pub task_title: String,
+    pub branch: String,
+    #[ts(type = "Date")]
+    pub created_at: DateTime<Utc>,
+    #[ts(type = "Date")]
+    pub updated_at: DateTime<Utc>,
+    pub repos: Vec<RepoDiffEntry>,
+    pub stats: Option<TaskAttemptDiffStats>,
+}
+
+fn prefix_diff_paths(diff: &mut Diff, repo_name: &str) {
+    if let Some(old) = diff.old_path.take() {
+        diff.old_path = Some(format!("{repo_name}/{old}"));
+    }
+
+    if let Some(new) = diff.new_path.take() {
+        diff.new_path = Some(format!("{repo_name}/{new}"));
+    }
+}
+
+fn diff_line_counts(diff: &Diff) -> (usize, usize) {
+    match (diff.additions, diff.deletions) {
+        (Some(add), Some(del)) => (add, del),
+        _ => {
+            let old = diff.old_content.as_deref().unwrap_or("");
+            let new = diff.new_content.as_deref().unwrap_or("");
+            compute_line_change_counts(old, new)
+        }
+    }
 }
 
 pub async fn get_task_attempts(
@@ -236,6 +300,94 @@ pub async fn run_agent_setup(
         .await;
 
     Ok(ResponseJson(ApiResponse::success(RunAgentSetupResponse {})))
+}
+
+#[axum::debug_handler]
+pub async fn get_task_attempt_diff(
+    Query(params): Query<TaskAttemptDiffQuery>,
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<TaskAttemptDiffResponse>>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let repos =
+        WorkspaceRepo::find_repos_with_target_branch_for_workspace(pool, workspace.id).await?;
+    if repos.is_empty() {
+        return Err(ApiError::BadRequest(
+            "Workspace has no repositories configured".to_string(),
+        ));
+    }
+
+    let task = Task::find_by_id(pool, workspace.task_id)
+        .await?
+        .ok_or(WorkspaceError::TaskNotFound)?;
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_root = Path::new(&container_ref);
+
+    let cumulative_bytes = Arc::new(AtomicUsize::new(0));
+    let mut repo_diffs = Vec::with_capacity(repos.len());
+    let mut stats = TaskAttemptDiffStats {
+        files_changed: 0,
+        additions: 0,
+        deletions: 0,
+    };
+
+    for repo in repos {
+        let worktree_path = workspace_root.join(&repo.repo.name);
+
+        let base_commit = deployment.git().get_base_commit(
+            &repo.repo.path,
+            &workspace.branch,
+            &repo.target_branch,
+        )?;
+
+        let mut diffs = deployment.git().get_diffs(
+            DiffTarget::Worktree {
+                worktree_path: &worktree_path,
+                base_commit: &base_commit,
+            },
+            None,
+        )?;
+
+        for diff in &mut diffs {
+            apply_stream_omit_policy(diff, &cumulative_bytes, params.stats_only);
+            prefix_diff_paths(diff, &repo.repo.name);
+
+            if params.include_stats {
+                let (add, del) = diff_line_counts(diff);
+                stats.additions += add;
+                stats.deletions += del;
+            }
+        }
+
+        if params.include_stats {
+            stats.files_changed += diffs.len();
+        }
+
+        repo_diffs.push(RepoDiffEntry {
+            repo_id: repo.repo.id,
+            repo_name: repo.repo.name.clone(),
+            target_branch: repo.target_branch.clone(),
+            diffs,
+        });
+    }
+
+    let response = TaskAttemptDiffResponse {
+        attempt_id: workspace.id,
+        task_id: workspace.task_id,
+        task_title: task.title,
+        branch: workspace.branch.clone(),
+        created_at: workspace.created_at,
+        updated_at: workspace.updated_at,
+        repos: repo_diffs,
+        stats: params.include_stats.then_some(stats),
+    };
+
+    Ok(ResponseJson(ApiResponse::success(response)))
 }
 
 #[axum::debug_handler]
@@ -1486,6 +1638,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/run-setup-script", post(run_setup_script))
         .route("/run-cleanup-script", post(run_cleanup_script))
         .route("/branch-status", get(get_task_attempt_branch_status))
+        .route("/diff", get(get_task_attempt_diff))
         .route("/diff/ws", get(stream_task_attempt_diff_ws))
         .route("/merge", post(merge_task_attempt))
         .route("/push", post(push_task_attempt_branch))
