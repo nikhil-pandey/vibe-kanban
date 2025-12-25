@@ -12,6 +12,8 @@ export interface UseProjectsResult {
   isLoading: boolean;
   isConnected: boolean;
   error: Error | null;
+  /** Force reconnect and fetch fresh data */
+  refresh: () => void;
 }
 
 export function useProjects(): UseProjectsResult {
@@ -19,7 +21,7 @@ export function useProjects(): UseProjectsResult {
 
   const initialData = useCallback((): ProjectsState => ({ projects: {} }), []);
 
-  const { data, isConnected, error } = useJsonPatchWsStream<ProjectsState>(
+  const { data, isConnected, error, refresh } = useJsonPatchWsStream<ProjectsState>(
     endpoint,
     true,
     initialData
@@ -44,5 +46,6 @@ export function useProjects(): UseProjectsResult {
     isLoading: !data && !error,
     isConnected,
     error: errorObj,
+    refresh,
   };
 }

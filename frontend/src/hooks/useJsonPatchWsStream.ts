@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { applyPatch } from 'rfc6902';
 import type { Operation } from 'rfc6902';
 
@@ -21,6 +21,8 @@ interface UseJsonPatchStreamResult<T> {
   data: T | undefined;
   isConnected: boolean;
   error: string | null;
+  /** Force reconnect and fetch fresh data */
+  refresh: () => void;
 }
 
 /**
@@ -196,5 +198,31 @@ export const useJsonPatchWsStream = <T extends object>(
     retryNonce,
   ]);
 
-  return { data, isConnected, error };
+  const refresh = useCallback(() => {
+    // Close existing connection
+    if (wsRef.current) {
+      const ws = wsRef.current;
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      ws.close();
+      wsRef.current = null;
+    }
+    // Clear retry timer
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    // Reset state for fresh data
+    finishedRef.current = false;
+    dataRef.current = undefined;
+    retryAttemptsRef.current = 0;
+    setData(undefined);
+    setError(null);
+    // Trigger reconnect
+    setRetryNonce((n) => n + 1);
+  }, []);
+
+  return { data, isConnected, error, refresh };
 };

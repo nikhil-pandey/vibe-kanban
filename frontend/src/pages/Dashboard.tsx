@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Plus, FolderPlus, ListPlus } from 'lucide-react';
+import { AlertTriangle, Plus, FolderPlus, ListPlus, RefreshCw } from 'lucide-react';
 import { useAllTasks, useProjects } from '@/hooks';
 import { ProjectFormDialog } from '@/components/dialogs/projects/ProjectFormDialog';
 import { useSearch } from '@/contexts/SearchContext';
@@ -116,10 +116,11 @@ export function Dashboard() {
     projectNames: taskProjectNames,
     isLoading: isTasksLoading,
     error: streamError,
+    refresh: refreshTasks,
   } = useAllTasks();
 
   // Fetch all projects (including those without tasks)
-  const { projects: allProjects, projectsById, isLoading: isProjectsLoading } = useProjects();
+  const { projects: allProjects, projectsById, isLoading: isProjectsLoading, refresh: refreshProjects } = useProjects();
 
   const isLoading = isTasksLoading || isProjectsLoading;
 
@@ -324,6 +325,11 @@ export function Dashboard() {
     await ProjectFormDialog.show({});
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    refreshTasks();
+    refreshProjects();
+  }, [refreshTasks, refreshProjects]);
+
   const handleCreateTask = useCallback((projectId: string) => {
     openTaskForm({ mode: 'create', projectId });
   }, []);
@@ -343,6 +349,15 @@ export function Dashboard() {
             onStatusChange={handleStatusFilterChange}
           />
           <div className="flex items-center gap-2">
+            <Button
+              onClick={handleRefresh}
+              size="sm"
+              variant="ghost"
+              className="gap-2"
+              title={t('common:buttons.refresh', { defaultValue: 'Refresh' })}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
             {projectNames.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>

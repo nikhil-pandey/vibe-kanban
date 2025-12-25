@@ -18,6 +18,8 @@ export interface UseAllTasksResult {
   isLoading: boolean;
   isConnected: boolean;
   error: string | null;
+  /** Force reconnect and fetch fresh data */
+  refresh: () => void;
 }
 
 /**
@@ -30,7 +32,7 @@ export const useAllTasks = (): UseAllTasksResult => {
 
   const initialData = useCallback((): AllTasksState => ({ tasks: {} }), []);
 
-  const { data, isConnected, error } = useJsonPatchWsStream(
+  const { data, isConnected, error, refresh } = useJsonPatchWsStream(
     endpoint,
     true, // always enabled
     initialData
@@ -103,5 +105,6 @@ export const useAllTasks = (): UseAllTasksResult => {
     isLoading,
     isConnected,
     error,
+    refresh,
   };
 };
