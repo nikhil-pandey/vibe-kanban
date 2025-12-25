@@ -397,25 +397,47 @@ impl TaskServer {
             .await
             .map_err(|e| Self::err("Failed to connect to VK API", Some(&e.to_string())).unwrap())?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
+        let status = resp.status();
+        let body_bytes = resp
+            .bytes()
+            .await
+            .map_err(|e| Self::err("Failed to read VK API response", Some(&e.to_string())).unwrap())?;
+        let body = String::from_utf8_lossy(&body_bytes);
+
+        tracing::debug!(status = %status, body = %body, "VK API raw response");
+
+        if !status.is_success() {
             return Err(
-                Self::err(format!("VK API returned error status: {}", status), None).unwrap(),
+                Self::err(format!("VK API returned error status: {}", status), Some(body.to_string()))
+                    .unwrap(),
             );
         }
 
-        let api_response = resp.json::<ApiResponseEnvelope<T>>().await.map_err(|e| {
-            Self::err("Failed to parse VK API response", Some(&e.to_string())).unwrap()
-        })?;
+        let api_response =
+            serde_json::from_slice::<ApiResponseEnvelope<T>>(&body_bytes).map_err(|e| {
+                tracing::warn!(
+                    status = %status,
+                    body = %body,
+                    error = %e,
+                    "Failed to parse VK API response"
+                );
+                Self::err("Failed to parse VK API response", Some(&e.to_string())).unwrap()
+            })?;
 
         if !api_response.success {
             let msg = api_response.message.as_deref().unwrap_or("Unknown error");
             return Err(Self::err("VK API returned error", Some(msg)).unwrap());
         }
 
-        api_response
-            .data
-            .ok_or_else(|| Self::err("VK API response missing data field", None).unwrap())
+        match api_response.data {
+            Some(data) => Ok(data),
+            // Some VK endpoints (e.g. task deletion) return `success: true` without a
+            // `data` payload. Accept these by treating a missing payload as JSON null and
+            // attempting to deserialize to the requested type.
+            None => serde_json::from_value(serde_json::Value::Null).map_err(|_| {
+                Self::err("VK API response missing data field", None).unwrap()
+            }),
+        }
     }
 
     fn url(&self, path: &str) -> String {
