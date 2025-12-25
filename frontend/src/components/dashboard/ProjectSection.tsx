@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Link2,
   MoreHorizontal,
+  Plus,
   Trash2,
   Unlink,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import { useOpenProjectInEditor } from '@/hooks/useOpenProjectInEditor';
 import { useProjectRepos } from '@/hooks';
 import { useProjectMutations } from '@/hooks/useProjectMutations';
 import { LinkProjectDialog } from '@/components/dialogs/projects/LinkProjectDialog';
+import { openTaskForm } from '@/lib/openTaskForm';
 import type { Project, TaskWithAttemptStatusAndProject, Workspace } from 'shared/types';
 
 interface ProjectSectionProps {
@@ -52,7 +54,7 @@ export function ProjectSection({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { t } = useTranslation(['projects', 'common']);
+  const { t } = useTranslation(['projects', 'common', 'tasks']);
 
   // Get project repos to determine if it's a single-repo project
   const { data: repos } = useProjectRepos(projectId);
@@ -125,6 +127,14 @@ export function ProjectSection({
     [projectId, projectName]
   );
 
+  const handleCreateTask = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      openTaskForm({ mode: 'create', projectId });
+    },
+    [projectId]
+  );
+
   const handleLinkProject = useCallback(
     async (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -191,6 +201,15 @@ export function ProjectSection({
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1"
+            onClick={handleCreateTask}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t('tasks.create', { defaultValue: 'New Task' })}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
