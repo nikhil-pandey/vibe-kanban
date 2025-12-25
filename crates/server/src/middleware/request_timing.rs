@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use axum::{body::Body, middleware::Next, response::Response, http::Request};
+use axum::{body::Body, http::Request, middleware::Next, response::Response};
 use tracing::info;
 
 /// Log duration for each API request.

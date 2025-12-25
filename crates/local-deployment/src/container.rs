@@ -1139,8 +1139,13 @@ impl ContainerService for LocalContainerService {
             None
         };
 
-        ExecutionProcess::update_completion(&self.db.pool, execution_process.id, status_to_set, exit_code)
-            .await?;
+        ExecutionProcess::update_completion(
+            &self.db.pool,
+            execution_process.id,
+            status_to_set,
+            exit_code,
+        )
+        .await?;
 
         // Try graceful interrupt first, then force kill
         if let Some(child) = &child {

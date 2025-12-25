@@ -2,15 +2,17 @@
 
 use axum::{
     Router,
-    extract::{State, ws::{WebSocket, WebSocketUpgrade}},
+    extract::{
+        State,
+        ws::{WebSocket, WebSocketUpgrade},
+    },
     response::{IntoResponse, Json as ResponseJson},
     routing::get,
 };
 use db::models::task::{Task, TaskWithAttemptStatusAndProject};
 use deployment::Deployment;
 use futures_util::{SinkExt, StreamExt, TryStreamExt};
-use utils::log_msg::LogMsg;
-use utils::response::ApiResponse;
+use utils::{log_msg::LogMsg, response::ApiResponse};
 
 use crate::{DeploymentImpl, error::ApiError};
 
@@ -34,10 +36,7 @@ pub async fn stream_all_tasks_ws(
     })
 }
 
-async fn handle_all_tasks_ws(
-    socket: WebSocket,
-    deployment: DeploymentImpl,
-) -> anyhow::Result<()> {
+async fn handle_all_tasks_ws(socket: WebSocket, deployment: DeploymentImpl) -> anyhow::Result<()> {
     // Get the raw stream and convert LogMsg to WebSocket messages
     let mut stream = deployment
         .events()

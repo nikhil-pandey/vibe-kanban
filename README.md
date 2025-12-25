@@ -79,7 +79,13 @@ pnpm i
 pnpm run dev
 ```
 
-This will start the backend. A blank DB will be copied from the `dev_assets_seed` folder.
+This will start the backend with auto-reload on code changes. A blank DB will be copied from the `dev_assets_seed` folder.
+
+To run without backend auto-reload (useful when you don't want cargo to rebuild on every change):
+
+```bash
+pnpm run dev:no-reload
+```
 
 ### Building the frontend
 

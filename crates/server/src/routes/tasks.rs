@@ -16,7 +16,7 @@ use db::models::{
     image::TaskImage,
     project::{Project, ProjectError},
     repo::Repo,
-    task::{CreateTask, Task, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskStatus, TaskStatusWithMerge, TaskWithAttemptStatus, UpdateTask},
     workspace::{CreateWorkspace, Workspace},
     workspace_repo::{CreateWorkspaceRepo, WorkspaceRepo},
 };
@@ -40,6 +40,12 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskQuery {
     pub project_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TaskByStatusQuery {
+    pub project_id: Uuid,
+    pub limit: Option<i64>,
 }
 
 pub async fn get_tasks(
@@ -105,6 +111,51 @@ pub async fn get_task(
     State(_deployment): State<DeploymentImpl>,
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
     Ok(ResponseJson(ApiResponse::success(task)))
+}
+
+#[derive(Debug, Serialize, TS)]
+pub struct TasksByStatusGroup {
+    pub status: TaskStatus,
+    pub tasks: Vec<TaskStatusWithMerge>,
+}
+
+pub async fn get_tasks_by_status(
+    State(deployment): State<DeploymentImpl>,
+    Query(query): Query<TaskByStatusQuery>,
+) -> Result<ResponseJson<ApiResponse<Vec<TasksByStatusGroup>>>, ApiError> {
+    let limit = query.limit.unwrap_or(200).max(0);
+    let tasks =
+        Task::find_by_project_id_with_merge_status(&deployment.db().pool, query.project_id, limit)
+            .await?;
+
+    let ordered_statuses = [
+        TaskStatus::Todo,
+        TaskStatus::InProgress,
+        TaskStatus::InReview,
+        TaskStatus::Done,
+        TaskStatus::Cancelled,
+    ];
+
+    let result: Vec<TasksByStatusGroup> = ordered_statuses
+        .iter()
+        .filter_map(|status| {
+            let tasks_for_status: Vec<TaskStatusWithMerge> = tasks
+                .iter()
+                .filter(|t| &t.status == status)
+                .cloned()
+                .collect();
+            if tasks_for_status.is_empty() {
+                None
+            } else {
+                Some(TasksByStatusGroup {
+                    status: status.clone(),
+                    tasks: tasks_for_status,
+                })
+            }
+        })
+        .collect();
+
+    Ok(ResponseJson(ApiResponse::success(result)))
 }
 
 pub async fn create_task(
@@ -474,6 +525,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
     let inner = Router::new()
         .route("/", get(get_tasks).post(create_task))
         .route("/stream/ws", get(stream_tasks_ws))
+        .route("/by-status", get(get_tasks_by_status))
         .route("/create-and-start", post(create_task_and_start))
         .nest("/{task_id}", task_id_router);
 

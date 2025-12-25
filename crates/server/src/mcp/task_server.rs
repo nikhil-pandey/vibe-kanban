@@ -1,11 +1,12 @@
 use std::{future::Future, str::FromStr};
 
+use chrono::{DateTime, Utc};
 use db::models::{
     project::{CreateProject, Project, UpdateProject},
     project_repo::CreateProjectRepo,
     repo::Repo,
     tag::Tag,
-    task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
+    task::{CreateTask, Task, TaskStatus, TaskStatusWithMerge, TaskWithAttemptStatus, UpdateTask},
     workspace::{Workspace, WorkspaceContext},
 };
 use executors::{executors::BaseCodingAgent, profile::ExecutorProfileId};
@@ -242,6 +243,46 @@ pub struct ListTasksResponse {
 pub struct ListTasksFilters {
     pub status: Option<String>,
     pub limit: i32,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema, Deserialize)]
+pub struct ListTasksByStatusRequest {
+    #[schemars(description = "The ID of the project to list tasks from")]
+    pub project_id: Uuid,
+    #[schemars(description = "Maximum number of tasks to return (default: 200)")]
+    pub limit: Option<i32>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema, Deserialize)]
+pub struct TaskWithMergeSummary {
+    #[schemars(description = "The unique identifier of the task")]
+    pub id: String,
+    #[schemars(description = "The title of the task")]
+    pub title: String,
+    #[schemars(description = "Current status of the task")]
+    pub status: String,
+    #[schemars(description = "When the task was last updated")]
+    pub updated_at: String,
+    #[schemars(description = "Whether work for the task has been merged")]
+    pub is_merged: bool,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema, Deserialize)]
+pub struct TasksByStatusGroup {
+    #[schemars(description = "Status bucket name")]
+    pub status: String,
+    #[schemars(description = "Tasks in this status")]
+    pub tasks: Vec<TaskWithMergeSummary>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema, Deserialize)]
+pub struct ListTasksByStatusResponse {
+    #[schemars(description = "The project these tasks belong to")]
+    pub project_id: String,
+    #[schemars(description = "Tasks grouped by status with merge info")]
+    pub groups: Vec<TasksByStatusGroup>,
+    #[schemars(description = "Total number of tasks across all groups")]
+    pub count: usize,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -516,6 +557,21 @@ struct ApiResponseEnvelope<T> {
     message: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ApiTaskWithMerge {
+    id: Uuid,
+    title: String,
+    status: TaskStatus,
+    updated_at: DateTime<Utc>,
+    is_merged: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiTasksByStatusGroup {
+    status: TaskStatus,
+    tasks: Vec<ApiTaskWithMerge>,
+}
+
 impl TaskServer {
     fn success<T: Serialize>(data: &T) -> Result<CallToolResult, ErrorData> {
         Ok(CallToolResult::success(vec![Content::text(
@@ -549,19 +605,19 @@ impl TaskServer {
             .map_err(|e| Self::err("Failed to connect to VK API", Some(&e.to_string())).unwrap())?;
 
         let status = resp.status();
-        let body_bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| Self::err("Failed to read VK API response", Some(&e.to_string())).unwrap())?;
+        let body_bytes = resp.bytes().await.map_err(|e| {
+            Self::err("Failed to read VK API response", Some(&e.to_string())).unwrap()
+        })?;
         let body = String::from_utf8_lossy(&body_bytes);
 
         tracing::debug!(status = %status, body = %body, "VK API raw response");
 
         if !status.is_success() {
-            return Err(
-                Self::err(format!("VK API returned error status: {}", status), Some(body.to_string()))
-                    .unwrap(),
-            );
+            return Err(Self::err(
+                format!("VK API returned error status: {}", status),
+                Some(body.to_string()),
+            )
+            .unwrap());
         }
 
         let api_response =
@@ -585,9 +641,8 @@ impl TaskServer {
             // Some VK endpoints (e.g. 202 task deletion) return `success: true` without a
             // `data` payload. Accept these by treating a missing payload as JSON null and
             // attempting to deserialize to the requested type.
-            None => serde_json::from_value(serde_json::Value::Null).map_err(|_| {
-                Self::err("VK API response missing data field", None).unwrap()
-            }),
+            None => serde_json::from_value(serde_json::Value::Null)
+                .map_err(|_| Self::err("VK API response missing data field", None).unwrap()),
         }
     }
 
@@ -716,11 +771,8 @@ impl TaskServer {
                 None => None,
             };
 
-            let payload = CreateTask::from_title_description(
-                project_id,
-                title.clone(),
-                expanded_description,
-            );
+            let payload =
+                CreateTask::from_title_description(project_id, title.clone(), expanded_description);
 
             match self
                 .send_json::<Task>(self.client.post(&url).json(&payload))
@@ -777,7 +829,8 @@ impl TaskServer {
             if project_input.repositories.is_empty() {
                 failed.push(BatchOperationError {
                     identifier: format!("index {idx}"),
-                    error: "At least one repository is required when creating a project".to_string(),
+                    error: "At least one repository is required when creating a project"
+                        .to_string(),
                 });
                 continue;
             }
@@ -797,7 +850,8 @@ impl TaskServer {
             {
                 failed.push(BatchOperationError {
                     identifier: format!("index {idx}"),
-                    error: "Each repository must include both a display_name and git_repo_path".to_string(),
+                    error: "Each repository must include both a display_name and git_repo_path"
+                        .to_string(),
                 });
                 continue;
             }
@@ -941,6 +995,59 @@ impl TaskServer {
     }
 
     #[tool(
+        description = "List tasks grouped by status with merge status. `project_id` is required!"
+    )]
+    async fn list_tasks_by_status(
+        &self,
+        Parameters(ListTasksByStatusRequest { project_id, limit }): Parameters<
+            ListTasksByStatusRequest,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let mut url = self.url(&format!("/api/tasks/by-status?project_id={}", project_id));
+        if let Some(limit) = limit {
+            url.push_str(&format!("&limit={}", limit));
+        }
+        let groups: Vec<ApiTasksByStatusGroup> = match self.send_json(self.client.get(&url)).await {
+            Ok(g) => g,
+            Err(e) => return Ok(e),
+        };
+
+        let mut total_count = 0usize;
+        let output_groups: Vec<TasksByStatusGroup> = groups
+            .into_iter()
+            .map(|group| {
+                let tasks: Vec<TaskWithMergeSummary> = group
+                    .tasks
+                    .into_iter()
+                    .map(|task| {
+                        total_count += 1;
+                        TaskWithMergeSummary {
+                            id: task.id.to_string(),
+                            title: task.title,
+                            status: task.status.to_string(),
+                            updated_at: task.updated_at.to_rfc3339(),
+                            is_merged: task.is_merged,
+                        }
+                    })
+                    .collect();
+
+                TasksByStatusGroup {
+                    status: group.status.to_string(),
+                    tasks,
+                }
+            })
+            .collect();
+
+        let response = ListTasksByStatusResponse {
+            project_id: project_id.to_string(),
+            groups: output_groups,
+            count: total_count,
+        };
+
+        TaskServer::success(&response)
+    }
+
+    #[tool(
         description = "Start working on a task by creating and launching a new workspace session. Supported executors: CLAUDE_CODE, AMP, GEMINI, CODEX, OPENCODE, CURSOR_AGENT, QWEN_CODE, COPILOT, DROID."
     )]
     async fn start_workspace_session(
@@ -1024,7 +1131,9 @@ impl TaskServer {
     )]
     async fn start_workspace_sessions(
         &self,
-        Parameters(StartWorkspaceSessionsRequest { sessions }): Parameters<StartWorkspaceSessionsRequest>,
+        Parameters(StartWorkspaceSessionsRequest { sessions }): Parameters<
+            StartWorkspaceSessionsRequest,
+        >,
     ) -> Result<CallToolResult, ErrorData> {
         if sessions.is_empty() {
             return Self::err(
@@ -1168,10 +1277,7 @@ impl TaskServer {
             };
 
             let url = self.url(&format!("/api/tasks/{}", task_input.task_id));
-            match self
-                .send_json(self.client.put(&url).json(&payload))
-                .await
-            {
+            match self.send_json(self.client.put(&url).json(&payload)).await {
                 Ok(task) => updated.push(TaskDetails::from_task(task)),
                 Err(e) => failed.push(BatchOperationError {
                     identifier: task_input.task_id.to_string(),
@@ -1247,7 +1353,12 @@ impl TaskServer {
         let mut failed = Vec::new();
 
         for project_input in projects {
-            if project_input.name.as_deref().map(str::trim).map_or(false, |n| n.is_empty()) {
+            if project_input
+                .name
+                .as_deref()
+                .map(str::trim)
+                .map_or(false, |n| n.is_empty())
+            {
                 failed.push(BatchOperationError {
                     identifier: project_input.project_id.to_string(),
                     error: "Project name cannot be empty when provided".to_string(),
@@ -1284,7 +1395,9 @@ impl TaskServer {
         TaskServer::success(&response)
     }
 
-    #[tool(description = "Delete one or many projects. Provide the array of project_ids to delete.")]
+    #[tool(
+        description = "Delete one or many projects. Provide the array of project_ids to delete."
+    )]
     async fn delete_projects(
         &self,
         Parameters(DeleteProjectsRequest { project_ids }): Parameters<DeleteProjectsRequest>,
@@ -1363,7 +1476,7 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'list_tasks_by_status', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

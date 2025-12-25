@@ -91,6 +91,15 @@ pub struct TaskRelationships {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
+pub struct TaskStatusWithMerge {
+    pub id: Uuid,
+    pub title: String,
+    pub status: TaskStatus,
+    pub updated_at: DateTime<Utc>,
+    pub is_merged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CreateTask {
     pub project_id: Uuid,
     pub title: String,
@@ -490,6 +499,47 @@ ORDER BY p.name ASC, t.created_at DESC"#
         .execute(executor)
         .await?;
         Ok(result.rows_affected())
+    }
+
+    pub async fn find_by_project_id_with_merge_status(
+        pool: &SqlitePool,
+        project_id: Uuid,
+        limit: i64,
+    ) -> Result<Vec<TaskStatusWithMerge>, sqlx::Error> {
+        let records = sqlx::query!(
+            r#"SELECT
+  t.id              AS "id!: Uuid",
+  t.title           AS "title!: String",
+  t.status          AS "status!: TaskStatus",
+  t.updated_at      AS "updated_at!: DateTime<Utc>",
+  CASE WHEN EXISTS (
+      SELECT 1
+        FROM merges m
+        JOIN workspaces w ON m.workspace_id = w.id
+       WHERE w.task_id = t.id
+         AND (m.merge_type = 'direct' OR m.pr_status = 'merged')
+       LIMIT 1
+  ) THEN 1 ELSE 0 END AS "is_merged!: i64"
+FROM tasks t
+WHERE t.project_id = $1
+ORDER BY t.status ASC, t.updated_at DESC
+LIMIT $2"#,
+            project_id,
+            limit
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(records
+            .into_iter()
+            .map(|rec| TaskStatusWithMerge {
+                id: rec.id,
+                title: rec.title,
+                status: rec.status,
+                updated_at: rec.updated_at,
+                is_merged: rec.is_merged != 0,
+            })
+            .collect())
     }
 
     pub async fn delete<'e, E>(executor: E, id: Uuid) -> Result<u64, sqlx::Error>

@@ -68,6 +68,7 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
 | `list_tasks` | List tasks in a project | `project_id` | `status`<br/>`limit` | List of tasks with execution state |
+| `list_tasks_by_status` | List tasks grouped by status (includes merged flag) | `project_id` | `limit` (default: 200) | Status buckets, each with tasks including `id`, `title`, `status`, `updated_at`, `is_merged` |
 | `create_tasks` | Create one or many tasks | `project_id`<br/>`tasks[].title` | `tasks[].description` | Created task IDs, titles, and any failures |
 | `get_tasks` | Get details for multiple tasks | `task_ids[]` | None | Task details and any failures |
 | `update_tasks` | Update one or many tasks | `tasks[].task_id` | `tasks[].title`<br/>`tasks[].description`<br/>`tasks[].status` | Updated tasks and any failures |

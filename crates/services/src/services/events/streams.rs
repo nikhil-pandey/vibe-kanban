@@ -173,9 +173,7 @@ impl EventService {
         let db_pool = self.db.pool.clone();
 
         // Helper to build full snapshot
-        fn build_all_tasks_snapshot(
-            tasks: Vec<TaskWithAttemptStatusAndProject>,
-        ) -> LogMsg {
+        fn build_all_tasks_snapshot(tasks: Vec<TaskWithAttemptStatusAndProject>) -> LogMsg {
             let tasks_map: serde_json::Map<String, serde_json::Value> = tasks
                 .into_iter()
                 .map(|task| (task.id.to_string(), serde_json::to_value(task).unwrap()))
@@ -229,7 +227,8 @@ impl EventService {
                                             {
                                                 let enriched = TaskWithAttemptStatusAndProject {
                                                     task: task.task.clone(),
-                                                    has_in_progress_attempt: task.has_in_progress_attempt,
+                                                    has_in_progress_attempt: task
+                                                        .has_in_progress_attempt,
                                                     last_attempt_failed: task.last_attempt_failed,
                                                     executor: task.executor.clone(),
                                                     project_name: project.name,

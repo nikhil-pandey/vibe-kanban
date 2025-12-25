@@ -3,8 +3,7 @@ use axum::{
     routing::{IntoMakeService, get},
 };
 
-use crate::DeploymentImpl;
-use crate::middleware::request_timing;
+use crate::{DeploymentImpl, middleware::request_timing};
 
 pub mod all_tasks;
 pub mod approvals;
