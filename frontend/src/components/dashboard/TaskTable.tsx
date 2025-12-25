@@ -10,19 +10,13 @@ import {
   TableCell,
 } from '@/components/ui/table/table';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { StatusBadge, getStatusColor } from '@/components/ui/StatusBadge';
 import { tasksApi } from '@/lib/api';
 import { openTaskForm } from '@/lib/openTaskForm';
 import type { TaskWithAttemptStatusAndProject, TaskStatus } from 'shared/types';
@@ -34,14 +28,6 @@ const TASK_STATUSES: TaskStatus[] = [
   'done',
   'cancelled',
 ];
-
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  todo: 'Todo',
-  inprogress: 'In Progress',
-  inreview: 'In Review',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
 
 interface TaskTableProps {
   tasks: TaskWithAttemptStatusAndProject[];
@@ -119,6 +105,9 @@ export function TaskTable({
             clickable
             onClick={() => onSelectTask(task)}
             className={task.id === selectedTaskId ? 'bg-muted' : ''}
+            style={{
+              borderLeft: `4px solid hsl(var(${getStatusColor(task.status)}))`,
+            }}
           >
             <TableCell className="py-2 px-2">
               <div className="flex items-center gap-2">
@@ -132,24 +121,28 @@ export function TaskTable({
               </div>
             </TableCell>
             <TableCell className="py-2 px-2">
-              <Select
-                value={task.status}
-                onValueChange={(value) => handleStatusChange(task.id, value as TaskStatus)}
-              >
-                <SelectTrigger
-                  className="h-8 text-xs w-full"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className="cursor-pointer hover:opacity-80 transition-opacity"
+                  >
+                    <StatusBadge status={task.status} size="sm" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-40">
                   {TASK_STATUSES.map((status) => (
-                    <SelectItem key={status} value={status}>
-                      {STATUS_LABELS[status]}
-                    </SelectItem>
+                    <DropdownMenuItem
+                      key={status}
+                      onClick={() => handleStatusChange(task.id, status)}
+                      className="p-0"
+                    >
+                      <StatusBadge status={status} size="sm" />
+                    </DropdownMenuItem>
                   ))}
-                </SelectContent>
-              </Select>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </TableCell>
             <TableCell className="py-2 px-2">
               <DropdownMenu>
