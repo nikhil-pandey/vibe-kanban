@@ -440,6 +440,31 @@ pub struct GetAttemptDiffRequest {
     pub include_stats: Option<bool>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MergeAttemptRequest {
+    #[schemars(description = "Optional attempt/workspace ID to merge")]
+    pub attempt_id: Option<Uuid>,
+    #[schemars(
+        description = "Repository ID whose branch should be merged. Defaults to the single repo in the active workspace context if available."
+    )]
+    pub repo_id: Option<Uuid>,
+    #[schemars(
+        description = "Set to true to merge the newest attempt when attempt_id is not provided (uses the current task context when available)."
+    )]
+    #[serde(default)]
+    pub latest: Option<bool>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct MergeAttemptResponse {
+    #[schemars(description = "The merged attempt/workspace ID")]
+    pub attempt_id: String,
+    #[schemars(description = "The repository that was merged")]
+    pub repo_id: String,
+    #[schemars(description = "Whether the merge request was issued successfully")]
+    pub merged: bool,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct GetTasksResponse {
     #[schemars(description = "Task details for each requested task")]
@@ -774,6 +799,50 @@ impl TaskServer {
             )
             .unwrap()
         })
+    }
+
+    fn resolve_repo_id(&self, repo_id: Option<Uuid>) -> Result<Uuid, CallToolResult> {
+        if let Some(id) = repo_id {
+            return Ok(id);
+        }
+
+        let ctx = self.context.as_ref().ok_or_else(|| {
+            Self::err(
+                "repo_id is required when no workspace context is available",
+                Some("Pass repo_id explicitly or run from an active workspace session"),
+            )
+            .unwrap()
+        })?;
+
+        let mut repos = ctx.workspace_repos.iter();
+        let Some(first_repo) = repos.next() else {
+            return Err(Self::err(
+                "No repositories found in the workspace context",
+                Some("Pass repo_id explicitly"),
+            )
+            .unwrap());
+        };
+
+        if repos.next().is_some() {
+            let msg = "repo_id is required when multiple repositories are attached to the workspace"
+                .to_string();
+            let available = ctx
+                .workspace_repos
+                .iter()
+                .map(|r| format!("{} ({})", r.repo_name, r.repo_id))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            return Err(
+                Self::err(
+                    msg,
+                    Some(format!("Specify repo_id. Available workspace repos: {}", available)),
+                )
+                .unwrap(),
+            );
+        }
+
+        Ok(first_repo.repo_id)
     }
 }
 
@@ -1555,12 +1624,56 @@ impl TaskServer {
 
         TaskServer::success(&diff)
     }
+
+    #[tool(
+        description = "Merge the changes for a completed task attempt into its target branch. Provide repo_id and attempt_id, or set latest=true to merge the newest attempt (uses the active workspace context when available)."
+    )]
+    async fn merge_task_attempt(
+        &self,
+        Parameters(MergeAttemptRequest {
+            attempt_id,
+            repo_id,
+            latest,
+        }): Parameters<MergeAttemptRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let use_latest = latest.unwrap_or(attempt_id.is_none());
+        let attempt_id = match self.resolve_attempt_id(attempt_id, use_latest).await {
+            Ok(id) => id,
+            Err(err) => return Ok(err),
+        };
+
+        let repo_id = match self.resolve_repo_id(repo_id) {
+            Ok(id) => id,
+            Err(err) => return Ok(err),
+        };
+
+        let url = self.url(&format!("/api/task-attempts/{}/merge", attempt_id));
+        match self
+            .send_json::<serde_json::Value>(
+                self.client
+                    .post(&url)
+                    .json(&serde_json::json!({ "repo_id": repo_id })),
+            )
+            .await
+        {
+            Ok(_) => {
+                let response = MergeAttemptResponse {
+                    attempt_id: attempt_id.to_string(),
+                    repo_id: repo_id.to_string(),
+                    merged: true,
+                };
+
+                TaskServer::success(&response)
+            }
+            Err(err) => Ok(err),
+        }
+    }
 }
 
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'list_tasks_by_status', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'get_attempt_diff', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'list_tasks_by_status', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'get_attempt_diff', 'merge_task_attempt', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);
