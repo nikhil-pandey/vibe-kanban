@@ -75,9 +75,6 @@
     "currentBadge": " (現在)"
   },
   "signOut": "サインアウト",
-  "devMode": {
-    "banner": "開発モード - これは開発ビルドです"
-  },
   "oauth": {
     "title": "Vibe Kanbanにサインイン",
     "description": "サインインして組織に参加し、チームとタスクを共有します",
