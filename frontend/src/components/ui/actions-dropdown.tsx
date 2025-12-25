@@ -107,6 +107,7 @@ export function ActionsDropdown({
     if (!task?.id) return;
     CreateAttemptDialog.show({
       taskId: task.id,
+      projectId,
     });
   };
 
