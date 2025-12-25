@@ -216,7 +216,7 @@ export type ChangeTargetBranchRequest = { repo_id: string, new_target_branch: st
 
 export type ChangeTargetBranchResponse = { repo_id: string, new_target_branch: string, status: [number, number], };
 
-export type MergeTaskAttemptRequest = { repo_id: string, };
+export type MergeTaskAttemptRequest = { repo_id: string, auto_rebase: boolean | null, };
 
 export type PushTaskAttemptRequest = { repo_id: string, };
 

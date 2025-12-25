@@ -604,7 +604,7 @@ export const attemptsApi = {
         body: JSON.stringify(data),
       }
     );
-    return handleApiResponse<void>(response);
+    return handleApiResponse<void, GitOperationError>(response);
   },
 
   push: async (

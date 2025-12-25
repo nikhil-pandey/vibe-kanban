@@ -455,6 +455,7 @@ async fn handle_task_attempt_diff_ws(
 #[derive(Debug, Deserialize, Serialize, TS)]
 pub struct MergeTaskAttemptRequest {
     pub repo_id: Uuid,
+    pub auto_rebase: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, TS)]
@@ -467,7 +468,7 @@ pub async fn merge_task_attempt(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
     Json(request): Json<MergeTaskAttemptRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<(), GitOperationError>>, ApiError> {
     let pool = &deployment.db().pool;
 
     let workspace_repo =
@@ -484,7 +485,26 @@ pub async fn merge_task_attempt(
         .ensure_container_exists(&workspace)
         .await?;
     let workspace_path = Path::new(&container_ref);
-    let worktree_path = workspace_path.join(repo.name);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    if request.auto_rebase.unwrap_or(false) {
+        let rebase_response = perform_rebase_for_attempt(
+            &deployment,
+            &workspace,
+            &repo,
+            &workspace_repo,
+            &RebaseTaskAttemptRequest {
+                repo_id: request.repo_id,
+                old_base_branch: None,
+                new_base_branch: None,
+            },
+        )
+        .await?;
+
+        if !rebase_response.is_success() {
+            return Ok(ResponseJson(rebase_response));
+        }
+    }
 
     let task = workspace
         .parent_task(pool)
@@ -1118,6 +1138,90 @@ pub async fn rename_branch(
     })))
 }
 
+async fn perform_rebase_for_attempt(
+    deployment: &DeploymentImpl,
+    workspace: &Workspace,
+    repo: &Repo,
+    workspace_repo: &WorkspaceRepo,
+    payload: &RebaseTaskAttemptRequest,
+) -> Result<ApiResponse<(), GitOperationError>, ApiError> {
+    let pool = &deployment.db().pool;
+
+    let old_base_branch = payload
+        .old_base_branch
+        .clone()
+        .unwrap_or_else(|| workspace_repo.target_branch.clone());
+    let new_base_branch = payload
+        .new_base_branch
+        .clone()
+        .unwrap_or_else(|| workspace_repo.target_branch.clone());
+
+    match deployment
+        .git()
+        .check_branch_exists(&repo.path, &new_base_branch)?
+    {
+        true => {
+            if new_base_branch != workspace_repo.target_branch {
+                WorkspaceRepo::update_target_branch(
+                    pool,
+                    workspace.id,
+                    payload.repo_id,
+                    &new_base_branch,
+                )
+                .await?;
+            }
+        }
+        false => {
+            return Ok(ApiResponse::error(
+                format!(
+                    "Branch '{}' does not exist in the repository",
+                    new_base_branch
+                )
+                .as_str(),
+            ));
+        }
+    }
+
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(workspace)
+        .await?;
+    let workspace_path = Path::new(&container_ref);
+    let worktree_path = workspace_path.join(&repo.name);
+
+    if let Err(e) = deployment.git().rebase_branch(
+        &repo.path,
+        &worktree_path,
+        &new_base_branch,
+        &old_base_branch,
+        &workspace.branch.clone(),
+    ) {
+        use services::services::git::GitServiceError;
+        return Ok(ApiResponse::<(), GitOperationError>::error_with_data(
+            match e {
+                GitServiceError::MergeConflicts(msg) => GitOperationError::MergeConflicts {
+                    message: msg,
+                    op: ConflictOp::Rebase,
+                },
+                GitServiceError::RebaseInProgress => GitOperationError::RebaseInProgress,
+                other => return Err(ApiError::GitService(other)),
+            },
+        ));
+    }
+
+    deployment
+        .track_if_analytics_allowed(
+            "task_attempt_rebased",
+            serde_json::json!({
+                "workspace_id": workspace.id.to_string(),
+                "repo_id": payload.repo_id.to_string(),
+            }),
+        )
+        .await;
+
+    Ok(ApiResponse::success(()))
+}
+
 #[axum::debug_handler]
 pub async fn rebase_task_attempt(
     Extension(workspace): Extension<Workspace>,
@@ -1135,84 +1239,11 @@ pub async fn rebase_task_attempt(
         .await?
         .ok_or(RepoError::NotFound)?;
 
-    let old_base_branch = payload
-        .old_base_branch
-        .unwrap_or_else(|| workspace_repo.target_branch.clone());
-    let new_base_branch = payload
-        .new_base_branch
-        .unwrap_or_else(|| workspace_repo.target_branch.clone());
-
-    match deployment
-        .git()
-        .check_branch_exists(&repo.path, &new_base_branch)?
-    {
-        true => {
-            WorkspaceRepo::update_target_branch(
-                pool,
-                workspace.id,
-                payload.repo_id,
-                &new_base_branch,
-            )
+    let response =
+        perform_rebase_for_attempt(&deployment, &workspace, &repo, &workspace_repo, &payload)
             .await?;
-        }
-        false => {
-            return Ok(ResponseJson(ApiResponse::error(
-                format!(
-                    "Branch '{}' does not exist in the repository",
-                    new_base_branch
-                )
-                .as_str(),
-            )));
-        }
-    }
 
-    let container_ref = deployment
-        .container()
-        .ensure_container_exists(&workspace)
-        .await?;
-    let workspace_path = Path::new(&container_ref);
-    let worktree_path = workspace_path.join(&repo.name);
-
-    let result = deployment.git().rebase_branch(
-        &repo.path,
-        &worktree_path,
-        &new_base_branch,
-        &old_base_branch,
-        &workspace.branch.clone(),
-    );
-    if let Err(e) = result {
-        use services::services::git::GitServiceError;
-        return match e {
-            GitServiceError::MergeConflicts(msg) => Ok(ResponseJson(ApiResponse::<
-                (),
-                GitOperationError,
-            >::error_with_data(
-                GitOperationError::MergeConflicts {
-                    message: msg,
-                    op: ConflictOp::Rebase,
-                },
-            ))),
-            GitServiceError::RebaseInProgress => Ok(ResponseJson(ApiResponse::<
-                (),
-                GitOperationError,
-            >::error_with_data(
-                GitOperationError::RebaseInProgress,
-            ))),
-            other => Err(ApiError::GitService(other)),
-        };
-    }
-
-    deployment
-        .track_if_analytics_allowed(
-            "task_attempt_rebased",
-            serde_json::json!({
-                "workspace_id": workspace.id.to_string(),
-                "repo_id": payload.repo_id.to_string(),
-            }),
-        )
-        .await;
-
-    Ok(ResponseJson(ApiResponse::success(())))
+    Ok(ResponseJson(response))
 }
 
 #[axum::debug_handler]

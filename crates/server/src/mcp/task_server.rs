@@ -453,6 +453,11 @@ pub struct MergeAttemptRequest {
     )]
     #[serde(default)]
     pub latest: Option<bool>,
+    #[schemars(
+        description = "Set to false to skip automatically rebasing the attempt branch onto the target before merging."
+    )]
+    #[serde(default)]
+    pub auto_rebase: Option<bool>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -824,8 +829,9 @@ impl TaskServer {
         };
 
         if repos.next().is_some() {
-            let msg = "repo_id is required when multiple repositories are attached to the workspace"
-                .to_string();
+            let msg =
+                "repo_id is required when multiple repositories are attached to the workspace"
+                    .to_string();
             let available = ctx
                 .workspace_repos
                 .iter()
@@ -833,13 +839,14 @@ impl TaskServer {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            return Err(
-                Self::err(
-                    msg,
-                    Some(format!("Specify repo_id. Available workspace repos: {}", available)),
-                )
-                .unwrap(),
-            );
+            return Err(Self::err(
+                msg,
+                Some(format!(
+                    "Specify repo_id. Available workspace repos: {}",
+                    available
+                )),
+            )
+            .unwrap());
         }
 
         Ok(first_repo.repo_id)
@@ -1626,7 +1633,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Merge the changes for a completed task attempt into its target branch. Provide repo_id and attempt_id, or set latest=true to merge the newest attempt (uses the active workspace context when available)."
+        description = "Merge the changes for a completed task attempt into its target branch. Provide repo_id and attempt_id, or set latest=true to merge the newest attempt (uses the active workspace context when available). Set auto_rebase=false to skip rebasing onto the target branch before merging (default: true)."
     )]
     async fn merge_task_attempt(
         &self,
@@ -1634,6 +1641,7 @@ impl TaskServer {
             attempt_id,
             repo_id,
             latest,
+            auto_rebase,
         }): Parameters<MergeAttemptRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let use_latest = latest.unwrap_or(attempt_id.is_none());
@@ -1648,12 +1656,12 @@ impl TaskServer {
         };
 
         let url = self.url(&format!("/api/task-attempts/{}/merge", attempt_id));
+        let auto_rebase = auto_rebase.unwrap_or(true);
         match self
-            .send_json::<serde_json::Value>(
-                self.client
-                    .post(&url)
-                    .json(&serde_json::json!({ "repo_id": repo_id })),
-            )
+            .send_json::<serde_json::Value>(self.client.post(&url).json(&serde_json::json!({
+                "repo_id": repo_id,
+                "auto_rebase": auto_rebase,
+            })))
             .await
         {
             Ok(_) => {
