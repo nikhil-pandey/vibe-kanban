@@ -59,26 +59,30 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
 | `list_projects` | Fetch all projects | None | None | List of projects with metadata |
+| `create_projects` | Create one or many projects and link local repositories | `projects[].name`<br/>`projects[].repositories[].display_name`<br/>`projects[].repositories[].git_repo_path` | None | Summaries of created projects and repo counts |
+| `update_projects` | Update one or many projects | `projects[].project_id` | `projects[].name`<br/>`projects[].dev_script`<br/>`projects[].dev_script_working_dir`<br/>`projects[].default_agent_working_dir` | Updated project summaries and any failures |
+| `delete_projects` | Delete one or many projects | `project_ids[]` | None | Deleted project IDs and any failures |
 
 ### Task Management
 
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
 | `list_tasks` | List tasks in a project | `project_id` | `status`<br/>`limit` | List of tasks with execution state |
-| `create_task` | Create a new task | `project_id`<br/>`title` | `description` | Created task ID and confirmation |
-| `get_task` | Get task details | `task_id` | None | Full task information |
-| `update_task` | Update task details | `task_id` | `title`<br/>`description`<br/>`status` | Updated task information |
-| `delete_task` | Delete a task | `task_id` | None | Deletion confirmation |
+| `create_tasks` | Create one or many tasks | `project_id`<br/>`tasks[].title` | `tasks[].description` | Created task IDs, titles, and any failures |
+| `get_tasks` | Get details for multiple tasks | `task_ids[]` | None | Task details and any failures |
+| `update_tasks` | Update one or many tasks | `tasks[].task_id` | `tasks[].title`<br/>`tasks[].description`<br/>`tasks[].status` | Updated tasks and any failures |
+| `delete_tasks` | Delete one or many tasks | `task_ids[]` | None | Deleted task IDs and any failures |
 
 ### Task Execution
 
 | Tool | Purpose | Required Parameters | Optional Parameters | Returns |
 |------|---------|-------------------|-------------------|---------|
-| `start_task_attempt` | Start working on a task with a coding agent | `task_id`<br/>`executor`<br/>`base_branch` | `variant` | Attempt ID and confirmation |
+| `start_workspace_session` | Start working on a single task with a coding agent | `task_id`<br/>`executor`<br/>`repos[].base_branch`<br/>`repos[].repo_id` | `variant` | Workspace/attempt ID and confirmation |
+| `start_workspace_sessions` | Start working on many tasks with coding agents | `sessions[].task_id`<br/>`sessions[].executor`<br/>`sessions[].repos[].base_branch`<br/>`sessions[].repos[].repo_id` | `sessions[].variant` | Workspace/attempt IDs and any failures |
 
 ### Supported Executors
 
-When using `start_task_attempt`, the following executors are supported (case-insensitive, accepts hyphens or underscores):
+When using `start_workspace_session` or `start_workspace_sessions`, the following executors are supported (case-insensitive, accepts hyphens or underscores):
 
 - `claude-code` / `CLAUDE_CODE`
 - `amp` / `AMP`
@@ -97,7 +101,7 @@ Once you have the MCP server configured, you can leverage it to streamline your 
 1. **Plan Your Work**: Describe a large feature or project to your MCP client
 2. **Request Task Creation**: At the end of your task description, simply add "then turn this plan into tasks"
 3. **Automatic Task Generation**: Your MCP client will use the Vibe Kanban MCP server to automatically create structured tasks in your project
-4. **Start Task Execution**: Use `start_task_attempt` to programmatically begin work on tasks with specific coding agents
+4. **Start Task Execution**: Use `start_workspace_session` (or `start_workspace_sessions` for batches) to programmatically begin work on tasks with specific coding agents
 
 ## Example Usage
 
@@ -114,7 +118,7 @@ I need to build a user authentication system with the following features:
 Then turn this plan into tasks.
 ```
 
-Your MCP client will use the `create_task` tool to break this down into individual tasks and add them to your Vibe Kanban project automatically.
+Your MCP client will use the `create_tasks` tool to break this down into individual tasks and add them to your Vibe Kanban project automatically.
 
 ### Starting Task Execution
 
@@ -124,7 +128,7 @@ After tasks are created, you can start work on them programmatically:
 Start working on the user registration task using Claude Code on the main branch.
 ```
 
-Your MCP client will use the `start_task_attempt` tool with parameters like:
+Your MCP client will use the `start_workspace_session` tool with parameters like:
 ```json
 {
   "task_id": "123e4567-e89b-12d3-a456-426614174000",
@@ -144,7 +148,7 @@ This creates a new task attempt, generates a feature branch, and starts the codi
 4. Start a task attempt for the new task using Amp on the develop branch
 ```
 
-Each step uses the appropriate MCP tool (`list_projects`, `list_tasks`, `create_task`, `start_task_attempt`) to manage the complete workflow from planning to execution.
+Each step uses the appropriate MCP tool (`list_projects`, `list_tasks`, `create_tasks`, `start_workspace_session`) to manage the complete workflow from planning to execution.
 
 ### Internal Coding Agents (Within Vibe Kanban)
 

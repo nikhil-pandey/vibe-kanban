@@ -1,7 +1,8 @@
 use std::{future::Future, str::FromStr};
 
 use db::models::{
-    project::Project,
+    project::{CreateProject, Project, UpdateProject},
+    project_repo::CreateProjectRepo,
     repo::Repo,
     tag::Tag,
     task::{CreateTask, Task, TaskStatus, TaskWithAttemptStatus, UpdateTask},
@@ -27,18 +28,37 @@ use crate::routes::{
 };
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct CreateTaskRequest {
-    #[schemars(description = "The ID of the project to create the task in. This is required!")]
-    pub project_id: Uuid,
+pub struct CreateTaskInput {
     #[schemars(description = "The title of the task")]
     pub title: String,
     #[schemars(description = "Optional description of the task")]
     pub description: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateTasksRequest {
+    #[schemars(description = "The ID of the project to create the task(s) in. This is required!")]
+    pub project_id: Uuid,
+    #[schemars(description = "One or more tasks to create")]
+    pub tasks: Vec<CreateTaskInput>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct CreateTaskResponse {
+pub struct CreatedTaskSummary {
+    #[schemars(description = "The ID of the created task")]
     pub task_id: String,
+    #[schemars(description = "The title of the created task")]
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateTasksResponse {
+    #[schemars(description = "The tasks that were created")]
+    pub tasks: Vec<CreatedTaskSummary>,
+    #[schemars(description = "How many tasks were created")]
+    pub count: usize,
+    #[schemars(description = "Any tasks that failed to create")]
+    pub failed: Vec<BatchOperationError>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -62,6 +82,46 @@ impl ProjectSummary {
             updated_at: project.updated_at.to_rfc3339(),
         }
     }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectRepoRequest {
+    #[schemars(description = "Display name for the repository inside the project")]
+    pub display_name: String,
+    #[schemars(description = "Absolute path to the local git repository")]
+    pub git_repo_path: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectRequest {
+    #[schemars(description = "Name of the project")]
+    pub name: String,
+    #[schemars(description = "One or more repositories to link to the project")]
+    pub repositories: Vec<CreateProjectRepoRequest>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct CreateProjectsRequest {
+    #[schemars(description = "One or more projects to create")]
+    pub projects: Vec<CreateProjectRequest>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateProjectResponse {
+    #[schemars(description = "Summary of the created project")]
+    pub project: ProjectSummary,
+    #[schemars(description = "How many repositories were linked to the project")]
+    pub repository_count: usize,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct CreateProjectsResponse {
+    #[schemars(description = "Summaries of the created projects")]
+    pub projects: Vec<CreateProjectResponse>,
+    #[schemars(description = "How many projects were created")]
+    pub count: usize,
+    #[schemars(description = "Any projects that failed to create")]
+    pub failed: Vec<BatchOperationError>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -185,7 +245,7 @@ pub struct ListTasksFilters {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct UpdateTaskRequest {
+pub struct UpdateTaskInput {
     #[schemars(description = "The ID of the task to update")]
     pub task_id: Uuid,
     #[schemars(description = "New title for the task")]
@@ -196,15 +256,26 @@ pub struct UpdateTaskRequest {
     pub status: Option<String>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateTasksRequest {
+    #[schemars(description = "One or more task updates to apply")]
+    pub tasks: Vec<UpdateTaskInput>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct UpdateTaskResponse {
-    pub task: TaskDetails,
+pub struct UpdateTasksResponse {
+    #[schemars(description = "Updated tasks")]
+    pub tasks: Vec<TaskDetails>,
+    #[schemars(description = "How many tasks were updated")]
+    pub count: usize,
+    #[schemars(description = "Any tasks that failed to update")]
+    pub failed: Vec<BatchOperationError>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct DeleteTaskRequest {
-    #[schemars(description = "The ID of the task to delete")]
-    pub task_id: Uuid,
+pub struct DeleteTasksRequest {
+    #[schemars(description = "The IDs of the tasks to delete")]
+    pub task_ids: Vec<Uuid>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -235,20 +306,100 @@ pub struct StartWorkspaceSessionResponse {
     pub workspace_id: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct StartWorkspaceSessionsRequest {
+    #[schemars(description = "One or more task attempts to start")]
+    pub sessions: Vec<StartWorkspaceSessionRequest>,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct DeleteTaskResponse {
-    pub deleted_task_id: Option<String>,
+pub struct StartWorkspaceSessionsResponse {
+    #[schemars(description = "Started workspace sessions")]
+    pub sessions: Vec<StartWorkspaceSessionResponse>,
+    #[schemars(description = "How many sessions were started")]
+    pub count: usize,
+    #[schemars(description = "Any task attempts that failed to start")]
+    pub failed: Vec<BatchOperationError>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DeleteTasksResponse {
+    #[schemars(description = "The IDs of deleted tasks")]
+    pub deleted_task_ids: Vec<String>,
+    #[schemars(description = "How many tasks were deleted")]
+    pub count: usize,
+    #[schemars(description = "Any tasks that failed to delete")]
+    pub failed: Vec<BatchOperationError>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct GetTaskRequest {
-    #[schemars(description = "The ID of the task to retrieve")]
-    pub task_id: Uuid,
+pub struct UpdateProjectInput {
+    #[schemars(description = "The ID of the project to update")]
+    pub project_id: Uuid,
+    #[schemars(description = "New project name")]
+    pub name: Option<String>,
+    #[schemars(description = "Optional dev script command")]
+    pub dev_script: Option<String>,
+    #[schemars(description = "Optional dev script working directory")]
+    pub dev_script_working_dir: Option<String>,
+    #[schemars(description = "Optional default agent working directory")]
+    pub default_agent_working_dir: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct UpdateProjectsRequest {
+    #[schemars(description = "One or more project updates to apply")]
+    pub projects: Vec<UpdateProjectInput>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
-pub struct GetTaskResponse {
-    pub task: TaskDetails,
+pub struct UpdateProjectsResponse {
+    #[schemars(description = "Updated project summaries")]
+    pub projects: Vec<ProjectSummary>,
+    #[schemars(description = "How many projects were updated")]
+    pub count: usize,
+    #[schemars(description = "Any projects that failed to update")]
+    pub failed: Vec<BatchOperationError>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct DeleteProjectsRequest {
+    #[schemars(description = "The IDs of the projects to delete")]
+    pub project_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct DeleteProjectsResponse {
+    #[schemars(description = "The IDs of deleted projects")]
+    pub deleted_project_ids: Vec<String>,
+    #[schemars(description = "How many projects were deleted")]
+    pub count: usize,
+    #[schemars(description = "Any projects that failed to delete")]
+    pub failed: Vec<BatchOperationError>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct GetTasksRequest {
+    #[schemars(description = "The IDs of the tasks to retrieve")]
+    pub task_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct GetTasksResponse {
+    #[schemars(description = "Task details for each requested task")]
+    pub tasks: Vec<TaskDetails>,
+    #[schemars(description = "How many tasks were returned")]
+    pub count: usize,
+    #[schemars(description = "Any tasks that failed to fetch")]
+    pub failed: Vec<BatchOperationError>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct BatchOperationError {
+    #[schemars(description = "Identifier for the item that failed (id or index)")]
+    pub identifier: String,
+    #[schemars(description = "Error message for the failure")]
+    pub error: String,
 }
 
 #[derive(Debug, Clone)]
@@ -499,6 +650,25 @@ impl TaskServer {
 
         result.into_owned()
     }
+
+    fn summarize_error(err: CallToolResult) -> String {
+        if let Some(structured) = err.structured_content {
+            return structured.to_string();
+        }
+
+        let text_parts: Vec<String> = err
+            .content
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|c| c.as_text().map(|t| t.text.clone()))
+            .collect();
+
+        if text_parts.is_empty() {
+            "Unknown error".to_string()
+        } else {
+            text_parts.join("\n")
+        }
+    }
 }
 
 #[tool_router]
@@ -514,43 +684,151 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create a new task/ticket in a project. Always pass the `project_id` of the project you want to create the task in - it is required!"
+        description = "Create one or many tasks/tickets in a project. Always pass the `project_id` and an array of tasks."
     )]
-    async fn create_task(
+    async fn create_tasks(
         &self,
-        Parameters(CreateTaskRequest {
-            project_id,
-            title,
-            description,
-        }): Parameters<CreateTaskRequest>,
+        Parameters(CreateTasksRequest { project_id, tasks }): Parameters<CreateTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        // Expand @tagname references in description
-        let expanded_description = match description {
-            Some(desc) => Some(self.expand_tags(&desc).await),
-            None => None,
-        };
+        if tasks.is_empty() {
+            return Self::err(
+                "At least one task must be provided when creating tasks".to_string(),
+                None::<String>,
+            );
+        }
 
+        let mut created = Vec::new();
+        let mut failed = Vec::new();
         let url = self.url("/api/tasks");
 
-        let task: Task = match self
-            .send_json(
-                self.client
-                    .post(&url)
-                    .json(&CreateTask::from_title_description(
-                        project_id,
-                        title,
-                        expanded_description,
-                    )),
-            )
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => return Ok(e),
+        for (idx, task_input) in tasks.into_iter().enumerate() {
+            let title = task_input.title.trim().to_string();
+            if title.is_empty() {
+                failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: "Task title cannot be empty".to_string(),
+                });
+                continue;
+            }
+
+            let expanded_description = match task_input.description {
+                Some(desc) => Some(self.expand_tags(&desc).await),
+                None => None,
+            };
+
+            let payload = CreateTask::from_title_description(
+                project_id,
+                title.clone(),
+                expanded_description,
+            );
+
+            match self
+                .send_json::<Task>(self.client.post(&url).json(&payload))
+                .await
+            {
+                Ok(task) => created.push(CreatedTaskSummary {
+                    task_id: task.id.to_string(),
+                    title: task.title,
+                }),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = CreateTasksResponse {
+            count: created.len(),
+            tasks: created,
+            failed,
         };
 
-        TaskServer::success(&CreateTaskResponse {
-            task_id: task.id.to_string(),
-        })
+        TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Create one or many projects and link at least one local git repository per project. Provide an array of projects with names and repositories."
+    )]
+    async fn create_projects(
+        &self,
+        Parameters(CreateProjectsRequest { projects }): Parameters<CreateProjectsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if projects.is_empty() {
+            return Self::err(
+                "At least one project must be provided when creating projects".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut created = Vec::new();
+        let mut failed = Vec::new();
+        let url = self.url("/api/projects");
+
+        for (idx, project_input) in projects.into_iter().enumerate() {
+            let trimmed_name = project_input.name.trim();
+            if trimmed_name.is_empty() {
+                failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: "Project name cannot be empty".to_string(),
+                });
+                continue;
+            }
+
+            if project_input.repositories.is_empty() {
+                failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: "At least one repository is required when creating a project".to_string(),
+                });
+                continue;
+            }
+
+            let repo_payload: Vec<CreateProjectRepo> = project_input
+                .repositories
+                .into_iter()
+                .map(|repo| CreateProjectRepo {
+                    display_name: repo.display_name.trim().to_string(),
+                    git_repo_path: repo.git_repo_path.trim().to_string(),
+                })
+                .collect();
+
+            if repo_payload
+                .iter()
+                .any(|repo| repo.display_name.is_empty() || repo.git_repo_path.is_empty())
+            {
+                failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: "Each repository must include both a display_name and git_repo_path".to_string(),
+                });
+                continue;
+            }
+
+            let payload = CreateProject {
+                name: trimmed_name.to_string(),
+                repositories: repo_payload,
+            };
+
+            match self
+                .send_json::<Project>(self.client.post(&url).json(&payload))
+                .await
+            {
+                Ok(project) => created.push(CreateProjectResponse {
+                    repository_count: payload.repositories.len(),
+                    project: ProjectSummary::from_project(project),
+                }),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: format!("index {idx}"),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = CreateProjectsResponse {
+            count: created.len(),
+            projects: created,
+            failed,
+        };
+
+        TaskServer::success(&response)
     }
 
     #[tool(description = "List all the available projects")]
@@ -663,7 +941,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Start working on a task by creating and launching a new workspace session."
+        description = "Start working on a task by creating and launching a new workspace session. Supported executors: CLAUDE_CODE, AMP, GEMINI, CODEX, OPENCODE, CURSOR_AGENT, QWEN_CODE, COPILOT, DROID."
     )]
     async fn start_workspace_session(
         &self,
@@ -690,8 +968,9 @@ impl TaskServer {
         let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
             Ok(exec) => exec,
             Err(_) => {
+                let options = "Supported executors: CLAUDE_CODE, AMP, GEMINI, CODEX, OPENCODE, CURSOR_AGENT, QWEN_CODE, COPILOT, DROID";
                 return Self::err(
-                    format!("Unknown executor '{executor_trimmed}'."),
+                    format!("Unknown executor '{executor_trimmed}'. {options}"),
                     None::<String>,
                 );
             }
@@ -741,92 +1020,341 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Update an existing task/ticket's title, description, or status. `project_id` and `task_id` are required! `title`, `description`, and `status` are optional."
+        description = "Start working on many tasks by creating and launching workspace sessions in bulk. Supported executors: CLAUDE_CODE, AMP, GEMINI, CODEX, OPENCODE, CURSOR_AGENT, QWEN_CODE, COPILOT, DROID."
     )]
-    async fn update_task(
+    async fn start_workspace_sessions(
         &self,
-        Parameters(UpdateTaskRequest {
-            task_id,
-            title,
-            description,
-            status,
-        }): Parameters<UpdateTaskRequest>,
+        Parameters(StartWorkspaceSessionsRequest { sessions }): Parameters<StartWorkspaceSessionsRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let status = if let Some(ref status_str) = status {
-            match TaskStatus::from_str(status_str) {
-                Ok(s) => Some(s),
-                Err(_) => {
-                    return Self::err(
-                        "Invalid status filter. Valid values: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'".to_string(),
-                        Some(status_str.to_string()),
-                    );
-                }
-            }
-        } else {
-            None
-        };
-
-        // Expand @tagname references in description
-        let expanded_description = match description {
-            Some(desc) => Some(self.expand_tags(&desc).await),
-            None => None,
-        };
-
-        let payload = UpdateTask {
-            title,
-            description: expanded_description,
-            status,
-            parent_workspace_id: None,
-            image_ids: None,
-        };
-        let url = self.url(&format!("/api/tasks/{}", task_id));
-        let updated_task: Task = match self.send_json(self.client.put(&url).json(&payload)).await {
-            Ok(t) => t,
-            Err(e) => return Ok(e),
-        };
-
-        let details = TaskDetails::from_task(updated_task);
-        let repsonse = UpdateTaskResponse { task: details };
-        TaskServer::success(&repsonse)
-    }
-
-    #[tool(
-        description = "Delete a task/ticket from a project. `project_id` and `task_id` are required!"
-    )]
-    async fn delete_task(
-        &self,
-        Parameters(DeleteTaskRequest { task_id }): Parameters<DeleteTaskRequest>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/tasks/{}", task_id));
-        if let Err(e) = self
-            .send_json::<serde_json::Value>(self.client.delete(&url))
-            .await
-        {
-            return Ok(e);
+        if sessions.is_empty() {
+            return Self::err(
+                "At least one session must be provided when starting workspaces".to_string(),
+                None::<String>,
+            );
         }
 
-        let repsonse = DeleteTaskResponse {
-            deleted_task_id: Some(task_id.to_string()),
+        let mut started = Vec::new();
+        let mut failed = Vec::new();
+
+        for session in sessions {
+            let executor_trimmed = session.executor.trim();
+            if executor_trimmed.is_empty() {
+                failed.push(BatchOperationError {
+                    identifier: session.task_id.to_string(),
+                    error: "Executor must not be empty.".to_string(),
+                });
+                continue;
+            }
+
+            if session.repos.is_empty() {
+                failed.push(BatchOperationError {
+                    identifier: session.task_id.to_string(),
+                    error: "At least one repository must be specified.".to_string(),
+                });
+                continue;
+            }
+
+            let normalized_executor = executor_trimmed.replace('-', "_").to_ascii_uppercase();
+            let base_executor = match BaseCodingAgent::from_str(&normalized_executor) {
+                Ok(exec) => exec,
+                Err(_) => {
+                    let options = "Supported executors: CLAUDE_CODE, AMP, GEMINI, CODEX, OPENCODE, CURSOR_AGENT, QWEN_CODE, COPILOT, DROID";
+                    failed.push(BatchOperationError {
+                        identifier: session.task_id.to_string(),
+                        error: format!("Unknown executor '{executor_trimmed}'. {options}"),
+                    });
+                    continue;
+                }
+            };
+
+            let variant = session.variant.and_then(|v| {
+                let trimmed = v.trim();
+                if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed.to_string())
+                }
+            });
+
+            let executor_profile_id = ExecutorProfileId {
+                executor: base_executor,
+                variant,
+            };
+
+            let workspace_repos: Vec<WorkspaceRepoInput> = session
+                .repos
+                .into_iter()
+                .map(|r| WorkspaceRepoInput {
+                    repo_id: r.repo_id,
+                    target_branch: r.base_branch,
+                })
+                .collect();
+
+            let payload = CreateTaskAttemptBody {
+                task_id: session.task_id,
+                executor_profile_id,
+                repos: workspace_repos,
+            };
+
+            let url = self.url("/api/task-attempts");
+            match self
+                .send_json::<Workspace>(self.client.post(&url).json(&payload))
+                .await
+            {
+                Ok(workspace) => started.push(StartWorkspaceSessionResponse {
+                    task_id: workspace.task_id.to_string(),
+                    workspace_id: workspace.id.to_string(),
+                }),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: session.task_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = StartWorkspaceSessionsResponse {
+            count: started.len(),
+            sessions: started,
+            failed,
         };
 
-        TaskServer::success(&repsonse)
+        TaskServer::success(&response)
     }
 
     #[tool(
-        description = "Get detailed information (like task description) about a specific task/ticket. You can use `list_tasks` to find the `task_ids` of all tasks in a project. `project_id` and `task_id` are required!"
+        description = "Update one or many tasks' title, description, or status. Each item requires `task_id`; `title`, `description`, and `status` are optional."
     )]
-    async fn get_task(
+    async fn update_tasks(
         &self,
-        Parameters(GetTaskRequest { task_id }): Parameters<GetTaskRequest>,
+        Parameters(UpdateTasksRequest { tasks }): Parameters<UpdateTasksRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let url = self.url(&format!("/api/tasks/{}", task_id));
-        let task: Task = match self.send_json(self.client.get(&url)).await {
-            Ok(t) => t,
-            Err(e) => return Ok(e),
+        if tasks.is_empty() {
+            return Self::err(
+                "At least one task update must be provided".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut updated = Vec::new();
+        let mut failed = Vec::new();
+
+        for task_input in tasks {
+            let status = if let Some(ref status_str) = task_input.status {
+                match TaskStatus::from_str(status_str) {
+                    Ok(s) => Some(s),
+                    Err(_) => {
+                        failed.push(BatchOperationError {
+                            identifier: task_input.task_id.to_string(),
+                            error: "Invalid status. Valid: 'todo', 'inprogress', 'inreview', 'done', 'cancelled'".to_string(),
+                        });
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+
+            let expanded_description = match task_input.description {
+                Some(desc) => Some(self.expand_tags(&desc).await),
+                None => None,
+            };
+
+            let payload = UpdateTask {
+                title: task_input.title,
+                description: expanded_description,
+                status,
+                parent_workspace_id: None,
+                image_ids: None,
+            };
+
+            let url = self.url(&format!("/api/tasks/{}", task_input.task_id));
+            match self
+                .send_json(self.client.put(&url).json(&payload))
+                .await
+            {
+                Ok(task) => updated.push(TaskDetails::from_task(task)),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: task_input.task_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = UpdateTasksResponse {
+            count: updated.len(),
+            tasks: updated,
+            failed,
         };
 
-        let details = TaskDetails::from_task(task);
-        let response = GetTaskResponse { task: details };
+        TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Delete one or many tasks/tickets from a project. Provide the array of task_ids to delete."
+    )]
+    async fn delete_tasks(
+        &self,
+        Parameters(DeleteTasksRequest { task_ids }): Parameters<DeleteTasksRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if task_ids.is_empty() {
+            return Self::err(
+                "At least one task_id must be provided when deleting tasks".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut deleted = Vec::new();
+        let mut failed = Vec::new();
+
+        for task_id in task_ids {
+            let url = self.url(&format!("/api/tasks/{}", task_id));
+            match self
+                .send_json::<serde_json::Value>(self.client.delete(&url))
+                .await
+            {
+                Ok(_) => deleted.push(task_id.to_string()),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: task_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = DeleteTasksResponse {
+            count: deleted.len(),
+            deleted_task_ids: deleted,
+            failed,
+        };
+
+        TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Update one or many projects. Each item requires `project_id`; `name`, `dev_script`, `dev_script_working_dir`, and `default_agent_working_dir` are optional."
+    )]
+    async fn update_projects(
+        &self,
+        Parameters(UpdateProjectsRequest { projects }): Parameters<UpdateProjectsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if projects.is_empty() {
+            return Self::err(
+                "At least one project update must be provided".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut updated = Vec::new();
+        let mut failed = Vec::new();
+
+        for project_input in projects {
+            if project_input.name.as_deref().map(str::trim).map_or(false, |n| n.is_empty()) {
+                failed.push(BatchOperationError {
+                    identifier: project_input.project_id.to_string(),
+                    error: "Project name cannot be empty when provided".to_string(),
+                });
+                continue;
+            }
+
+            let payload = UpdateProject {
+                name: project_input.name.map(|n| n.trim().to_string()),
+                dev_script: project_input.dev_script,
+                dev_script_working_dir: project_input.dev_script_working_dir,
+                default_agent_working_dir: project_input.default_agent_working_dir,
+            };
+
+            let url = self.url(&format!("/api/projects/{}", project_input.project_id));
+            match self
+                .send_json::<Project>(self.client.put(&url).json(&payload))
+                .await
+            {
+                Ok(project) => updated.push(ProjectSummary::from_project(project)),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: project_input.project_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = UpdateProjectsResponse {
+            count: updated.len(),
+            projects: updated,
+            failed,
+        };
+
+        TaskServer::success(&response)
+    }
+
+    #[tool(description = "Delete one or many projects. Provide the array of project_ids to delete.")]
+    async fn delete_projects(
+        &self,
+        Parameters(DeleteProjectsRequest { project_ids }): Parameters<DeleteProjectsRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if project_ids.is_empty() {
+            return Self::err(
+                "At least one project_id must be provided when deleting projects".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut deleted = Vec::new();
+        let mut failed = Vec::new();
+
+        for project_id in project_ids {
+            let url = self.url(&format!("/api/projects/{}", project_id));
+            match self
+                .send_json::<serde_json::Value>(self.client.delete(&url))
+                .await
+            {
+                Ok(_) => deleted.push(project_id.to_string()),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: project_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = DeleteProjectsResponse {
+            count: deleted.len(),
+            deleted_project_ids: deleted,
+            failed,
+        };
+
+        TaskServer::success(&response)
+    }
+
+    #[tool(
+        description = "Get detailed information (like task description) about one or many tasks/tickets. You can use `list_tasks` to find task_ids."
+    )]
+    async fn get_tasks(
+        &self,
+        Parameters(GetTasksRequest { task_ids }): Parameters<GetTasksRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if task_ids.is_empty() {
+            return Self::err(
+                "At least one task_id must be provided when fetching tasks".to_string(),
+                None::<String>,
+            );
+        }
+
+        let mut tasks_out = Vec::new();
+        let mut failed = Vec::new();
+
+        for task_id in task_ids {
+            let url = self.url(&format!("/api/tasks/{}", task_id));
+            match self.send_json(self.client.get(&url)).await {
+                Ok(task) => tasks_out.push(TaskDetails::from_task(task)),
+                Err(e) => failed.push(BatchOperationError {
+                    identifier: task_id.to_string(),
+                    error: TaskServer::summarize_error(e),
+                }),
+            }
+        }
+
+        let response = GetTasksResponse {
+            count: tasks_out.len(),
+            tasks: tasks_out,
+            failed,
+        };
 
         TaskServer::success(&response)
     }
@@ -835,7 +1363,7 @@ impl TaskServer {
 #[tool_handler]
 impl ServerHandler for TaskServer {
     fn get_info(&self) -> ServerInfo {
-        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`.. TOOLS: 'list_projects', 'list_tasks', 'create_task', 'start_workspace_session', 'get_task', 'update_task', 'delete_task', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
+        let mut instruction = "A task and project management server. If you need to create or update tickets or tasks then use these tools. Most of them absolutely require that you pass the `project_id` of the project that you are currently working on. You can get project ids by using `list_projects`. Call `list_tasks` to fetch the `task_ids` of all the tasks in a project`. TOOLS: 'list_projects', 'create_projects', 'update_projects', 'delete_projects', 'list_tasks', 'create_tasks', 'start_workspace_session', 'start_workspace_sessions', 'get_tasks', 'update_tasks', 'delete_tasks', 'list_repos'. Make sure to pass `project_id` or `task_id` where required. You can use list tools to get the available ids.".to_string();
         if self.context.is_some() {
             let context_instruction = "Use 'get_context' to fetch project/task/workspace metadata for the active Vibe Kanban workspace session when available.";
             instruction = format!("{} {}", context_instruction, instruction);

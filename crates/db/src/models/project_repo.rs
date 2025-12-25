@@ -43,7 +43,7 @@ pub struct ProjectRepoWithName {
     pub parallel_setup_script: bool,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CreateProjectRepo {
     pub display_name: String,
     pub git_repo_path: String,
