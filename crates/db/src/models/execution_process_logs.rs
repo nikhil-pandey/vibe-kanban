@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
+use sqlx::{FromRow, SqlitePool};
 use ts_rs::TS;
 use utils::log_msg::LogMsg;
 use uuid::Uuid;
@@ -77,18 +77,22 @@ impl ExecutionProcessLogs {
             return Ok(());
         }
 
-        let mut builder: QueryBuilder<Sqlite> = QueryBuilder::new(
-            "INSERT INTO execution_process_logs (execution_id, logs, byte_size, inserted_at) ",
-        );
+        // Coalesce the batch into a single row to minimize write locks and index churn.
+        let concatenated = jsonl_lines.concat();
+        let byte_size = jsonl_lines
+            .iter()
+            .map(|line| line.len() as i64)
+            .sum::<i64>();
 
-        builder.push_values(jsonl_lines, |mut b, line| {
-            b.push_bind(execution_id);
-            b.push_bind(line);
-            b.push_bind(line.len() as i64);
-            b.push("datetime('now', 'subsec')");
-        });
-
-        builder.build().execute(pool).await?;
+        sqlx::query!(
+            r#"INSERT INTO execution_process_logs (execution_id, logs, byte_size, inserted_at)
+               VALUES ($1, $2, $3, datetime('now', 'subsec'))"#,
+            execution_id,
+            concatenated,
+            byte_size
+        )
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
