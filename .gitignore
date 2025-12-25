@@ -1,6 +1,8 @@
 # Rust
 /target
 **/*.rs.bk
+# SQLx offline cache
+**/.sqlx/
 
 # Node.js
 node_modules/
