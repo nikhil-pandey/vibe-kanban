@@ -133,6 +133,12 @@
             "invalidChars": "包含无效字符。",
             "controlChars": "包含控制字符。"
           }
+        },
+        "commitTemplate": {
+          "label": "提交消息模板",
+          "helper": "合并任务更改时的提交消息模板。",
+          "placeholders": "可用: {title}, {short_id}, {id}, {project}",
+          "preview": "预览："
         }
       },
       "pullRequests": {

@@ -133,6 +133,12 @@
             "invalidChars": "Contiene caracteres no válidos.",
             "controlChars": "Contiene caracteres de control."
           }
+        },
+        "commitTemplate": {
+          "label": "Plantilla de Mensaje de Commit",
+          "helper": "Plantilla para mensajes de commit al fusionar cambios de tareas.",
+          "placeholders": "Disponible: {title}, {short_id}, {id}, {project}",
+          "preview": "Vista previa:"
         }
       },
       "pullRequests": {

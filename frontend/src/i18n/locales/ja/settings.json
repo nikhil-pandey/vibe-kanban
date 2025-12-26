@@ -133,6 +133,12 @@
             "invalidChars": "無効な文字が含まれています。",
             "controlChars": "制御文字が含まれています。"
           }
+        },
+        "commitTemplate": {
+          "label": "コミットメッセージテンプレート",
+          "helper": "タスク変更をマージする際のコミットメッセージのテンプレート。",
+          "placeholders": "使用可能: {title}, {short_id}, {id}, {project}",
+          "preview": "プレビュー："
         }
       },
       "pullRequests": {

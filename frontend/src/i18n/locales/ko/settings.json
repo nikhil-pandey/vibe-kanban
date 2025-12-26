@@ -133,6 +133,12 @@
             "invalidChars": "유효하지 않은 문자가 포함되어 있습니다.",
             "controlChars": "제어 문자가 포함되어 있습니다."
           }
+        },
+        "commitTemplate": {
+          "label": "커밋 메시지 템플릿",
+          "helper": "작업 변경사항 병합 시 커밋 메시지 템플릿.",
+          "placeholders": "사용 가능: {title}, {short_id}, {id}, {project}",
+          "preview": "미리보기:"
         }
       },
       "pullRequests": {

@@ -1870,3 +1870,70 @@ impl GitService {
         Ok(stats)
     }
 }
+
+/// Format a commit message using a template and task/project data.
+///
+/// Available placeholders:
+/// - `{title}` - Task title
+/// - `{short_id}` - First section of UUID (8 chars)
+/// - `{id}` - Full task UUID
+/// - `{project}` - Project name
+pub fn format_commit_message(
+    template: &str,
+    title: &str,
+    task_id: &uuid::Uuid,
+    project_name: &str,
+) -> String {
+    let task_uuid_str = task_id.to_string();
+    let short_id = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
+
+    template
+        .replace("{title}", title)
+        .replace("{short_id}", short_id)
+        .replace("{id}", &task_uuid_str)
+        .replace("{project}", project_name)
+}
+
+#[cfg(test)]
+mod commit_message_tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_format_commit_message_default_template() {
+        let id = Uuid::parse_str("22b11975-1234-5678-9abc-def012345678").unwrap();
+        let result = format_commit_message(
+            "{title} (vibe-kanban {short_id})",
+            "Fix login bug",
+            &id,
+            "my-project",
+        );
+        assert_eq!(result, "Fix login bug (vibe-kanban 22b11975)");
+    }
+
+    #[test]
+    fn test_format_commit_message_custom_template() {
+        let id = Uuid::parse_str("22b11975-1234-5678-9abc-def012345678").unwrap();
+        let result = format_commit_message(
+            "[{project}] {title} #{short_id}",
+            "Fix login bug",
+            &id,
+            "my-project",
+        );
+        assert_eq!(result, "[my-project] Fix login bug #22b11975");
+    }
+
+    #[test]
+    fn test_format_commit_message_title_only() {
+        let id = Uuid::parse_str("22b11975-1234-5678-9abc-def012345678").unwrap();
+        let result = format_commit_message("{title}", "Fix login bug", &id, "my-project");
+        assert_eq!(result, "Fix login bug");
+    }
+
+    #[test]
+    fn test_format_commit_message_full_id() {
+        let id = Uuid::parse_str("22b11975-1234-5678-9abc-def012345678").unwrap();
+        let result = format_commit_message("{title} ({id})", "Fix login bug", &id, "my-project");
+        assert_eq!(result, "Fix login bug (22b11975-1234-5678-9abc-def012345678)");
+    }
+}

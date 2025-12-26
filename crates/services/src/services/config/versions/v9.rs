@@ -19,6 +19,10 @@ fn default_pr_auto_description_enabled() -> bool {
     true
 }
 
+fn default_commit_message_template() -> String {
+    "{title} (vibe-kanban {short_id})".to_string()
+}
+
 /// Concurrency limit value - either a specific number or unlimited
 #[derive(Clone, Debug, Serialize, Deserialize, TS, PartialEq)]
 #[serde(untagged)]
@@ -153,6 +157,8 @@ pub struct Config {
     pub language: UiLanguage,
     #[serde(default = "default_git_branch_prefix")]
     pub git_branch_prefix: String,
+    #[serde(default = "default_commit_message_template")]
+    pub commit_message_template: String,
     #[serde(default)]
     pub showcases: ShowcaseState,
     #[serde(default = "default_pr_auto_description_enabled")]
@@ -181,6 +187,7 @@ impl Config {
             show_release_notes: old_config.show_release_notes,
             language: old_config.language,
             git_branch_prefix: old_config.git_branch_prefix,
+            commit_message_template: default_commit_message_template(),
             showcases: old_config.showcases,
             pr_auto_description_enabled: old_config.pr_auto_description_enabled,
             pr_auto_description_prompt: old_config.pr_auto_description_prompt,
@@ -232,6 +239,7 @@ impl Default for Config {
             show_release_notes: false,
             language: UiLanguage::default(),
             git_branch_prefix: default_git_branch_prefix(),
+            commit_message_template: default_commit_message_template(),
             showcases: ShowcaseState::default(),
             pr_auto_description_enabled: true,
             pr_auto_description_prompt: None,

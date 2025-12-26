@@ -26,6 +26,7 @@ use chrono::{DateTime, Utc};
 use db::models::{
     execution_process::{ExecutionProcess, ExecutionProcessRunReason, ExecutionProcessStatus},
     merge::{Merge, MergeStatus, PrMerge, PullRequestInfo},
+    project::Project,
     project_repo::ProjectRepo,
     repo::{Repo, RepoError},
     session::{CreateSession, Session},
@@ -48,7 +49,7 @@ use services::services::{
     config::ConcurrencyLimit,
     container::{ContainerError, ContainerService},
     diff_stream::apply_stream_omit_policy,
-    git::{ConflictOp, DiffTarget, GitCliError, GitServiceError},
+    git::{ConflictOp, DiffTarget, GitCliError, GitServiceError, format_commit_message},
     github::GitHubService,
 };
 use sqlx::Error as SqlxError;
@@ -552,10 +553,20 @@ pub async fn merge_task_attempt(
         .parent_task(pool)
         .await?
         .ok_or(ApiError::Workspace(WorkspaceError::TaskNotFound))?;
-    let task_uuid_str = task.id.to_string();
-    let first_uuid_section = task_uuid_str.split('-').next().unwrap_or(&task_uuid_str);
 
-    let mut commit_message = format!("{} (vibe-kanban {})", task.title, first_uuid_section);
+    // Get project name for commit message template
+    let project = Project::find_by_id(pool, task.project_id)
+        .await?
+        .ok_or(ApiError::Workspace(WorkspaceError::ProjectNotFound))?;
+
+    // Get commit message template from config
+    let config = deployment.config().read().await;
+    let mut commit_message = format_commit_message(
+        &config.commit_message_template,
+        &task.title,
+        &task.id,
+        &project.name,
+    );
 
     // Add description on next line if it exists
     if let Some(description) = &task.description

@@ -133,6 +133,12 @@
             "invalidChars": "Contains invalid characters.",
             "controlChars": "Contains control characters."
           }
+        },
+        "commitTemplate": {
+          "label": "Commit Message Template",
+          "helper": "Template for commit messages when merging task changes.",
+          "placeholders": "Available: {title}, {short_id}, {id}, {project}",
+          "preview": "Preview:"
         }
       },
       "pullRequests": {

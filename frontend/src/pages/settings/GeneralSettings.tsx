@@ -464,6 +464,38 @@ export function GeneralSettings() {
               )}
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="commit-message-template">
+              {t('settings.general.git.commitTemplate.label')}
+            </Label>
+            <Input
+              id="commit-message-template"
+              type="text"
+              placeholder="{title} (vibe-kanban {short_id})"
+              value={draft?.commit_message_template ?? ''}
+              onChange={(e) => {
+                updateDraft({ commit_message_template: e.target.value });
+              }}
+            />
+            <p className="text-sm text-muted-foreground">
+              {t('settings.general.git.commitTemplate.helper')}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {t('settings.general.git.commitTemplate.placeholders')}
+            </p>
+            {draft?.commit_message_template && (
+              <p className="text-sm text-muted-foreground">
+                {t('settings.general.git.commitTemplate.preview')}{' '}
+                <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                  {draft.commit_message_template
+                    .replace('{title}', 'Task Title')
+                    .replace('{short_id}', '22b11975')
+                    .replace('{id}', '22b11975-1234-5678-9abc-def012345678')
+                    .replace('{project}', 'Project Name')}
+                </code>
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
