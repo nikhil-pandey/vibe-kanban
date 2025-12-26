@@ -1532,6 +1532,66 @@ impl ContainerService for LocalContainerService {
                 }
             };
 
+            // We need an agent_session_id for follow-up. If we don't have one, skip.
+            let agent_session_id = match &entry.agent_session_id {
+                Some(id) => id.clone(),
+                None => {
+                    tracing::warn!(
+                        "No agent_session_id for interrupted execution {}, cannot resume as follow-up",
+                        entry.id
+                    );
+                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                    continue;
+                }
+            };
+
+            // Parse the original action to get executor_profile_id and working_dir
+            let original_action: ExecutorAction = match serde_json::from_str(&entry.executor_action) {
+                Ok(a) => a,
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to parse executor_action for interrupted execution {}: {}",
+                        entry.id,
+                        e
+                    );
+                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                    continue;
+                }
+            };
+
+            // Extract executor_profile_id and working_dir from original action
+            let (executor_profile_id, working_dir) = match &original_action.typ {
+                ExecutorActionType::CodingAgentInitialRequest(req) => {
+                    (req.executor_profile_id.clone(), req.working_dir.clone())
+                }
+                ExecutorActionType::CodingAgentFollowUpRequest(req) => {
+                    (req.executor_profile_id.clone(), req.working_dir.clone())
+                }
+                _ => {
+                    tracing::warn!(
+                        "Interrupted execution {} is not a coding agent request, skipping",
+                        entry.id
+                    );
+                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                    continue;
+                }
+            };
+
+            // Create a follow-up request with just the resume prompt
+            let follow_up = CodingAgentFollowUpRequest {
+                prompt: resume_prompt.clone(),
+                session_id: agent_session_id,
+                executor_profile_id,
+                working_dir,
+            };
+
+            let resume_action = ExecutorAction {
+                typ: ExecutorActionType::CodingAgentFollowUpRequest(follow_up),
+                next_action: None,
+            };
+
+            let resume_action_json = serde_json::to_string(&resume_action).unwrap_or_default();
+
             // Add to task queue with high priority (lower number = higher priority)
             let priority = 100; // Higher priority than normal queued tasks (1000)
 
@@ -1540,7 +1600,7 @@ impl ContainerService for LocalContainerService {
                 &CreateTaskQueueEntry {
                     session_id: session.id,
                     workspace_id: workspace.id,
-                    executor_action: entry.executor_action.clone(),
+                    executor_action: resume_action_json,
                     executor_type: entry.executor_type.clone(),
                     prompt: Some(resume_prompt.clone()),
                     priority: Some(priority),
