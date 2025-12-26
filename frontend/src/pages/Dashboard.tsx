@@ -307,12 +307,21 @@ export function Dashboard() {
 
   // Get projects to display - show all projects, but only show projects with matching tasks when searching
   const visibleProjects = useMemo(() => {
-    if (hasSearch) {
-      // When searching, only show projects that have matching tasks
-      return projectNames.filter((p) => filteredTasksByProject[p.id]?.length > 0);
-    }
-    // Otherwise show all projects (including empty ones)
-    return projectNames;
+    const baseProjects = hasSearch
+      ? projectNames.filter((p) => filteredTasksByProject[p.id]?.length > 0) // Only show projects that have matching tasks when searching
+      : projectNames;
+
+    // Sort so projects with tasks appear first, followed by empty projects
+    return [...baseProjects].sort((a, b) => {
+      const aHasTasks = (filteredTasksByProject[a.id]?.length ?? 0) > 0;
+      const bHasTasks = (filteredTasksByProject[b.id]?.length ?? 0) > 0;
+
+      if (aHasTasks !== bHasTasks) {
+        return aHasTasks ? -1 : 1;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
   }, [projectNames, filteredTasksByProject, hasSearch]);
 
   const isPanelOpen = Boolean(selectedTask);
