@@ -41,6 +41,7 @@ interface TaskTableProps {
   selectedTaskId?: string;
   onSelectTask: (task: TaskWithAttemptStatusAndProject) => void;
   onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
+  onRefresh?: () => void;
 }
 
 export function TaskTable({
@@ -48,6 +49,7 @@ export function TaskTable({
   selectedTaskId,
   onSelectTask,
   onAttemptCreated,
+  onRefresh,
 }: TaskTableProps) {
   const { t } = useTranslation(['tasks', 'common']);
   const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null);
@@ -62,10 +64,12 @@ export function TaskTable({
         projectId: task.project_id,
         onSuccess: onAttemptCreated
           ? (attempt) => onAttemptCreated(task, attempt)
-          : undefined,
+          : onRefresh
+            ? () => onRefresh()
+            : undefined,
       });
     },
-    [onAttemptCreated]
+    [onAttemptCreated, onRefresh]
   );
 
   const handleStopAttempt = useCallback(
@@ -88,9 +92,10 @@ export function TaskTable({
         console.error('Failed to stop attempt:', err);
       } finally {
         setStoppingTaskId(null);
+        onRefresh?.();
       }
     },
-    []
+    [onRefresh]
   );
 
   const handleStatusChange = useCallback(
@@ -103,19 +108,25 @@ export function TaskTable({
           parent_workspace_id: null,
           image_ids: null,
         });
+        onRefresh?.();
       } catch (err) {
         console.error('Failed to update task status:', err);
       }
     },
-    []
+    [onRefresh]
   );
 
   const handleEdit = useCallback(
     (e: React.MouseEvent, task: TaskWithAttemptStatusAndProject) => {
       e.stopPropagation();
-      openTaskForm({ mode: 'edit', projectId: task.project_id, task });
+      openTaskForm({
+        mode: 'edit',
+        projectId: task.project_id,
+        task,
+        onSuccess: onRefresh,
+      });
     },
-    []
+    [onRefresh]
   );
 
   const handleDelete = useCallback(
@@ -124,12 +135,13 @@ export function TaskTable({
       if (window.confirm(t('tasks:deleteConfirm', { defaultValue: 'Are you sure you want to delete this task?' }))) {
         try {
           await tasksApi.delete(task.id);
+          onRefresh?.();
         } catch (err) {
           console.error('Failed to delete task:', err);
         }
       }
     },
-    [t]
+    [onRefresh, t]
   );
 
   if (tasks.length === 0) {

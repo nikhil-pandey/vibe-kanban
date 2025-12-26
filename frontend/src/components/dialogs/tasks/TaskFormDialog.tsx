@@ -63,6 +63,8 @@ interface Task {
 
 type TaskFormDialogBaseProps = {
   navigateOnCreate?: boolean;
+  /** Optional callback after a successful create/update to refresh parent views */
+  onSuccess?: () => void;
 };
 
 export type TaskFormDialogProps =
@@ -184,6 +186,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
         },
         { onSuccess: () => modal.remove() }
       );
+      props.onSuccess?.();
     } else {
       const imageIds =
         newlyUploadedImageIds.length > 0 ? newlyUploadedImageIds : null;
@@ -214,6 +217,7 @@ const TaskFormDialogImpl = NiceModal.create<TaskFormDialogProps>((props) => {
       } else {
         await createTask.mutateAsync(task, { onSuccess: () => modal.remove() });
       }
+      props.onSuccess?.();
     }
   };
 

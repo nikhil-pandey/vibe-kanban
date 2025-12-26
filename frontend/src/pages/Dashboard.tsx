@@ -242,6 +242,11 @@ export function Dashboard() {
     [searchParams, setSearchParams]
   );
 
+  const handleRefresh = useCallback(() => {
+    refreshTasks();
+    refreshProjects();
+  }, [refreshTasks, refreshProjects]);
+
   const handleAttemptCreated = useCallback(
     (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => {
       // Update URL params to show the newly created attempt in the sidebar
@@ -251,8 +256,9 @@ export function Dashboard() {
       params.set('attempt', attempt.id);
       params.delete('view');
       setSearchParams(params, { replace: true });
+      handleRefresh();
     },
-    [searchParams, setSearchParams]
+    [searchParams, setSearchParams, handleRefresh]
   );
 
   const handleClosePanel = useCallback(() => {
@@ -325,14 +331,17 @@ export function Dashboard() {
     await ProjectFormDialog.show({});
   }, []);
 
-  const handleRefresh = useCallback(() => {
-    refreshTasks();
-    refreshProjects();
-  }, [refreshTasks, refreshProjects]);
-
-  const handleCreateTask = useCallback((projectId: string) => {
-    openTaskForm({ mode: 'create', projectId, navigateOnCreate: false });
-  }, []);
+  const handleCreateTask = useCallback(
+    (projectId: string) => {
+      openTaskForm({
+        mode: 'create',
+        projectId,
+        navigateOnCreate: false,
+        onSuccess: handleRefresh,
+      });
+    },
+    [handleRefresh]
+  );
 
   if (isLoading && tasks.length === 0) {
     return <Loader message={t('loading', { defaultValue: 'Loading...' })} size={32} className="py-8" />;
@@ -421,6 +430,7 @@ export function Dashboard() {
               selectedTaskId={selectedTaskId ?? undefined}
               onSelectTask={handleSelectTask}
               onAttemptCreated={handleAttemptCreated}
+              onRefresh={handleRefresh}
               defaultExpanded={true}
             />
           ))

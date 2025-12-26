@@ -38,6 +38,7 @@ interface ProjectSectionProps {
   selectedTaskId?: string;
   onSelectTask: (task: TaskWithAttemptStatusAndProject) => void;
   onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
+  onRefresh?: () => void;
   defaultExpanded?: boolean;
 }
 
@@ -49,6 +50,7 @@ export function ProjectSection({
   selectedTaskId,
   onSelectTask,
   onAttemptCreated,
+  onRefresh,
   defaultExpanded = true,
 }: ProjectSectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
@@ -130,9 +132,14 @@ export function ProjectSection({
   const handleCreateTask = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      openTaskForm({ mode: 'create', projectId, navigateOnCreate: false });
+      openTaskForm({
+        mode: 'create',
+        projectId,
+        navigateOnCreate: false,
+        onSuccess: onRefresh,
+      });
     },
-    [projectId]
+    [projectId, onRefresh]
   );
 
   const handleLinkProject = useCallback(
@@ -271,6 +278,7 @@ export function ProjectSection({
             selectedTaskId={selectedTaskId}
             onSelectTask={onSelectTask}
             onAttemptCreated={onAttemptCreated}
+            onRefresh={onRefresh}
           />
         </div>
       )}
