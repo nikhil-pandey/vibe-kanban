@@ -89,24 +89,7 @@ impl ProjectSummary {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{Json, Router, routing::get};
     use serde_json::Value;
-    use tokio::net::TcpListener;
-
-    fn make_context(task_id: Uuid, repo_id: Uuid) -> McpContext {
-        McpContext {
-            project_id: Uuid::new_v4(),
-            task_id,
-            task_title: "Test Task".to_string(),
-            workspace_id: Uuid::new_v4(),
-            workspace_branch: "feature/test".to_string(),
-            workspace_repos: vec![McpRepoContext {
-                repo_id,
-                repo_name: "repo".to_string(),
-                target_branch: "main".to_string(),
-            }],
-        }
-    }
 
     #[test]
     fn create_tasks_schema_uses_object_items() {
@@ -131,102 +114,6 @@ mod tests {
             .pointer("/properties/tasks/items/properties/title/type")
             .and_then(Value::as_str);
         assert_eq!(title_type, Some("string"));
-    }
-
-    #[tokio::test]
-    async fn latest_without_repo_id_returns_validation_error() {
-        let server = TaskServer::new("http://localhost");
-        let err = server
-            .resolve_attempt_id(None, true, None)
-            .await
-            .expect_err("latest without repo_id should error");
-
-        let summary = TaskServer::summarize_error(err);
-        assert!(
-            summary.contains("repo_id is required when latest=true"),
-            "unexpected error summary: {}",
-            summary
-        );
-    }
-
-    #[tokio::test]
-    async fn attempt_id_is_used_when_provided() {
-        let server = TaskServer::new("http://localhost");
-        let attempt = Uuid::new_v4();
-
-        let resolved = server
-            .resolve_attempt_id(Some(attempt), false, None)
-            .await
-            .expect("should return provided attempt_id");
-
-        assert_eq!(resolved, attempt);
-    }
-
-    #[tokio::test]
-    async fn latest_with_repo_and_context_fetches_newest_for_task() {
-        let listener = TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("failed to bind test listener");
-        let addr = listener.local_addr().unwrap();
-        let base_url = format!("http://{}", addr);
-
-        let task_id = Uuid::new_v4();
-        let repo_id = Uuid::new_v4();
-        let newest_attempt = Uuid::new_v4();
-
-        let workspaces = vec![
-            Workspace {
-                id: newest_attempt,
-                task_id,
-                container_ref: None,
-                branch: "feature/newest".to_string(),
-                agent_working_dir: None,
-                setup_completed_at: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            },
-            Workspace {
-                id: Uuid::new_v4(),
-                task_id,
-                container_ref: None,
-                branch: "feature/older".to_string(),
-                agent_working_dir: None,
-                setup_completed_at: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            },
-        ];
-
-        let app = {
-            let workspaces = workspaces.clone();
-            Router::new().route(
-                "/api/task-attempts",
-                get(move || {
-                    let payload = workspaces.clone();
-                    async move {
-                        Json(ApiResponseEnvelope {
-                            success: true,
-                            data: Some(payload),
-                            message: None,
-                        })
-                    }
-                }),
-            )
-        };
-
-        let server_handle = tokio::spawn(axum::serve(listener, app.into_make_service()));
-
-        let mut task_server = TaskServer::new(&base_url);
-        task_server.context = Some(make_context(task_id, repo_id));
-
-        let resolved = task_server
-            .resolve_attempt_id(None, true, Some(repo_id))
-            .await
-            .expect("should resolve latest attempt for task context");
-
-        server_handle.abort();
-
-        assert_eq!(resolved, newest_attempt);
     }
 }
 
@@ -576,12 +463,7 @@ pub struct GetAttemptDiffRequest {
     #[serde(alias = "attemptId")]
     pub attempt_id: Option<Uuid>,
     #[schemars(
-        description = "Repository ID to scope the lookup when using latest=true (must match the active workspace context)"
-    )]
-    #[serde(default, alias = "repoId")]
-    pub repo_id: Option<Uuid>,
-    #[schemars(
-        description = "Set to true to fetch the newest attempt (requires repo_id and the active task context)"
+        description = "Set to true to fetch the newest attempt (uses the current task context when available)"
     )]
     #[serde(default)]
     pub latest: Option<bool>,
@@ -924,7 +806,6 @@ impl TaskServer {
         &self,
         attempt_id: Option<Uuid>,
         latest: bool,
-        repo_id: Option<Uuid>,
     ) -> Result<Uuid, CallToolResult> {
         if let Some(id) = attempt_id {
             return Ok(id);
@@ -932,41 +813,16 @@ impl TaskServer {
 
         if !latest {
             return Err(Self::err(
-                "attempt_id is required unless using latest=true with repo_id",
-                Some(
-                    "Pass attempt_id directly or set latest=true with repo_id inside an active workspace context",
-                ),
+                "attempt_id is required unless latest=true",
+                Some("Pass attempt_id or set latest to true to use the newest attempt"),
             )
             .unwrap());
         }
 
-        let repo_id = repo_id.ok_or_else(|| {
-            Self::err(
-                "repo_id is required when latest=true",
-                Some(
-                    "Provide attempt_id directly or include repo_id (matching the active workspace) with latest=true",
-                ),
-            )
-            .unwrap()
-        })?;
-
-        let ctx = self.context.as_ref().ok_or_else(|| {
-            Self::err(
-                "Workspace context is required to resolve the latest attempt",
-                Some("Start a workspace session or provide an explicit attempt_id"),
-            )
-            .unwrap()
-        })?;
-
-        if !ctx.workspace_repos.iter().any(|r| r.repo_id == repo_id) {
-            return Err(Self::err(
-                "repo_id does not match the active workspace context",
-                Some("Use a repo from the current workspace or provide an explicit attempt_id"),
-            )
-            .unwrap());
+        let mut url = self.url("/api/task-attempts");
+        if let Some(ctx) = &self.context {
+            url.push_str(&format!("?task_id={}", ctx.task_id));
         }
-
-        let mut url = self.url(&format!("/api/task-attempts?task_id={}", ctx.task_id));
 
         let attempts: Vec<Workspace> = match self.send_json(self.client.get(&url)).await {
             Ok(list) => list,
@@ -1855,22 +1711,18 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Fetch the code diff for a task attempt. Provide `attempt_id` or set `latest=true` with `repo_id` to use the newest attempt for the active task context. Set `include_stats` to add aggregated additions/deletions."
+        description = "Fetch the code diff for a task attempt. Provide `attempt_id` or set `latest=true` to use the newest attempt (uses the active task context when available). Set `include_stats` to add aggregated additions/deletions."
     )]
     async fn get_attempt_diff(
         &self,
         Parameters(GetAttemptDiffRequest {
             attempt_id,
-            repo_id,
             latest,
             include_stats,
         }): Parameters<GetAttemptDiffRequest>,
     ) -> Result<CallToolResult, ErrorData> {
         let use_latest = latest.unwrap_or(attempt_id.is_none());
-        let attempt_id = match self
-            .resolve_attempt_id(attempt_id, use_latest, repo_id)
-            .await
-        {
+        let attempt_id = match self.resolve_attempt_id(attempt_id, use_latest).await {
             Ok(id) => id,
             Err(err) => return Ok(err),
         };
@@ -1903,16 +1755,13 @@ impl TaskServer {
             auto_rebase,
         }): Parameters<MergeAttemptRequest>,
     ) -> Result<CallToolResult, ErrorData> {
-        let repo_id = match self.resolve_repo_id(repo_id) {
+        let use_latest = latest.unwrap_or(attempt_id.is_none());
+        let attempt_id = match self.resolve_attempt_id(attempt_id, use_latest).await {
             Ok(id) => id,
             Err(err) => return Ok(err),
         };
 
-        let use_latest = latest.unwrap_or(attempt_id.is_none());
-        let attempt_id = match self
-            .resolve_attempt_id(attempt_id, use_latest, Some(repo_id))
-            .await
-        {
+        let repo_id = match self.resolve_repo_id(repo_id) {
             Ok(id) => id,
             Err(err) => return Ok(err),
         };

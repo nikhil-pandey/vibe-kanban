@@ -328,11 +328,12 @@ impl ExecutionProcess {
     }
 
     /// Get concurrency stats: total running and per-executor counts
-    pub async fn get_concurrency_stats(pool: &SqlitePool) -> Result<ConcurrencyStats, sqlx::Error> {
+    pub async fn get_concurrency_stats(
+        pool: &SqlitePool,
+    ) -> Result<ConcurrencyStats, sqlx::Error> {
         let running_processes = Self::find_running(pool).await?;
         let mut total_coding_agents: u32 = 0;
-        let mut by_executor: std::collections::HashMap<String, u32> =
-            std::collections::HashMap::new();
+        let mut by_executor: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
         for process in running_processes {
             if process.run_reason != ExecutionProcessRunReason::CodingAgent {

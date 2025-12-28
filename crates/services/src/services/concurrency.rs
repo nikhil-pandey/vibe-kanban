@@ -2,10 +2,7 @@
 //!
 //! This service enforces global and per-agent concurrency limits on coding agent executions.
 
-use db::{
-    DBService,
-    models::execution_process::{ConcurrencyStats, ExecutionProcess},
-};
+use db::{DBService, models::execution_process::{ConcurrencyStats, ExecutionProcess}};
 use executors::executors::BaseCodingAgent;
 use thiserror::Error;
 
@@ -140,21 +137,17 @@ mod tests {
     #[test]
     fn test_concurrency_check_result_is_allowed() {
         assert!(ConcurrencyCheckResult::Allowed.is_allowed());
-        assert!(
-            !ConcurrencyCheckResult::GlobalLimitExceeded {
-                current: 5,
-                limit: 5
-            }
-            .is_allowed()
-        );
-        assert!(
-            !ConcurrencyCheckResult::AgentLimitExceeded {
-                agent: "ClaudeCode".to_string(),
-                current: 2,
-                limit: 2
-            }
-            .is_allowed()
-        );
+        assert!(!ConcurrencyCheckResult::GlobalLimitExceeded {
+            current: 5,
+            limit: 5
+        }
+        .is_allowed());
+        assert!(!ConcurrencyCheckResult::AgentLimitExceeded {
+            agent: "ClaudeCode".to_string(),
+            current: 2,
+            limit: 2
+        }
+        .is_allowed());
     }
 
     #[test]

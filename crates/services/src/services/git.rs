@@ -1934,9 +1934,6 @@ mod commit_message_tests {
     fn test_format_commit_message_full_id() {
         let id = Uuid::parse_str("22b11975-1234-5678-9abc-def012345678").unwrap();
         let result = format_commit_message("{title} ({id})", "Fix login bug", &id, "my-project");
-        assert_eq!(
-            result,
-            "Fix login bug (22b11975-1234-5678-9abc-def012345678)"
-        );
+        assert_eq!(result, "Fix login bug (22b11975-1234-5678-9abc-def012345678)");
     }
 }

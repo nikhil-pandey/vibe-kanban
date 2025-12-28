@@ -141,7 +141,10 @@ impl InterruptedExecution {
     }
 
     /// Clean up old resumed entries
-    pub async fn cleanup_old(pool: &SqlitePool, days: i32) -> Result<u64, sqlx::Error> {
+    pub async fn cleanup_old(
+        pool: &SqlitePool,
+        days: i32,
+    ) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!(
             r#"DELETE FROM interrupted_executions
                WHERE resumed = 1
