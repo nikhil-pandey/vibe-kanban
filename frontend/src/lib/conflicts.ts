@@ -54,6 +54,6 @@ export function buildResolveConflictsInstructions(
   return (
     `${header}` +
     filesBlock +
-    `\n\nPlease resolve each file carefully. When continuing, ensure the ${opTitle.toLowerCase()} does not hang (set \`GIT_EDITOR=true\` or use a non-interactive editor).`
+    `\n\nPlease resolve each file carefully. After fixing conflicts, stage the files (e.g. \`git add .\`) and run \`GIT_EDITOR=true git rebase --continue\`. Repeat resolve + continue until Git reports the ${opTitle.toLowerCase()} is finished. Keep the command non-interactive so it cannot hang.`
   );
 }
