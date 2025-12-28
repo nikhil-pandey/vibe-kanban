@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, XCircle, MoreHorizontal, Pencil, Trash2, Play, Square } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableHead,
@@ -23,6 +24,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { StatusBadge, getStatusColor } from '@/components/ui/StatusBadge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { CreateAttemptDialog } from '@/components/dialogs/tasks/CreateAttemptDialog';
 import { tasksApi, attemptsApi } from '@/lib/api';
 import { openTaskForm } from '@/lib/openTaskForm';
@@ -42,6 +44,9 @@ interface TaskTableProps {
   onSelectTask: (task: TaskWithAttemptStatusAndProject) => void;
   onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
   onRefresh?: () => void;
+  // Bulk selection props
+  selectedTaskIds: Set<string>;
+  onToggleTaskSelection: (taskId: string) => void;
 }
 
 export function TaskTable({
@@ -50,6 +55,8 @@ export function TaskTable({
   onSelectTask,
   onAttemptCreated,
   onRefresh,
+  selectedTaskIds,
+  onToggleTaskSelection,
 }: TaskTableProps) {
   const { t } = useTranslation(['tasks', 'common']);
   const [stoppingTaskId, setStoppingTaskId] = useState<string | null>(null);
@@ -156,6 +163,19 @@ export function TaskTable({
     <Table>
       <TableHead>
         <TableRow>
+          <TableHeaderCell className="py-2 px-2 w-10">
+            <Checkbox
+              checked={tasks.length > 0 && tasks.every(t => selectedTaskIds.has(t.id))}
+              onCheckedChange={(checked) => {
+                tasks.forEach(t => {
+                  const isSelected = selectedTaskIds.has(t.id);
+                  if ((checked && !isSelected) || (!checked && isSelected)) {
+                    onToggleTaskSelection(t.id);
+                  }
+                });
+              }}
+            />
+          </TableHeaderCell>
           <TableHeaderCell className="py-2 px-2">{t('common:labels.title', { defaultValue: 'Title' })}</TableHeaderCell>
           <TableHeaderCell className="py-2 px-2 w-36">{t('common:labels.status', { defaultValue: 'Status' })}</TableHeaderCell>
           <TableHeaderCell className="py-2 px-2 w-10"></TableHeaderCell>
@@ -168,11 +188,20 @@ export function TaskTable({
             key={task.id}
             clickable
             onClick={() => onSelectTask(task)}
-            className={task.id === selectedTaskId ? 'bg-muted' : ''}
+            className={cn(
+              task.id === selectedTaskId && 'bg-muted',
+              selectedTaskIds.has(task.id) && 'bg-primary/10'
+            )}
             style={{
               borderLeft: `4px solid hsl(var(${getStatusColor(task.status)}))`,
             }}
           >
+            <TableCell className="py-2 px-2" onClick={(e) => e.stopPropagation()}>
+              <Checkbox
+                checked={selectedTaskIds.has(task.id)}
+                onCheckedChange={() => onToggleTaskSelection(task.id)}
+              />
+            </TableCell>
             <TableCell className="py-2 px-2">
               <div className="flex items-center gap-2">
                 <span className="truncate max-w-md">{task.title}</span>

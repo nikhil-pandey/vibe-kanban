@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Plus, FolderPlus, ListPlus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Plus, FolderPlus, ListPlus, RefreshCw, Trash2, X } from 'lucide-react';
 import { useAllTasks, useProjects } from '@/hooks';
 import { ProjectFormDialog } from '@/components/dialogs/projects/ProjectFormDialog';
 import { useSearch } from '@/contexts/SearchContext';
@@ -25,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { openTaskForm } from '@/lib/openTaskForm';
+import { tasksApi } from '@/lib/api';
+import { StatusBadge } from '@/components/ui/StatusBadge';
 import { NewCard, NewCardHeader } from '@/components/ui/new-card';
 import { TasksLayout, type LayoutMode } from '@/components/layout/TasksLayout';
 import TaskPanel from '@/components/panels/TaskPanel';
@@ -123,6 +125,25 @@ export function Dashboard() {
   const { projects: allProjects, projectsById, isLoading: isProjectsLoading, refresh: refreshProjects } = useProjects();
 
   const isLoading = isTasksLoading || isProjectsLoading;
+
+  // Bulk selection state
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+
+  const toggleTaskSelection = useCallback((taskId: string) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set());
+  }, []);
 
   // Merge project names from tasks with all projects to include empty projects
   const projectNames = useMemo(() => {
@@ -226,8 +247,10 @@ export function Dashboard() {
         params.set('status', newStatuses.join(','));
       }
       setSearchParams(params, { replace: true });
+      // Clear bulk selection when filters change
+      clearSelection();
     },
-    [searchParams, setSearchParams]
+    [searchParams, setSearchParams, clearSelection]
   );
 
   const handleSelectTask = useCallback(
@@ -246,6 +269,41 @@ export function Dashboard() {
     refreshTasks();
     refreshProjects();
   }, [refreshTasks, refreshProjects]);
+
+  // Bulk action handlers
+  const handleBulkDelete = useCallback(async () => {
+    if (selectedTaskIds.size === 0) return;
+    const confirmed = window.confirm(
+      t('tasks:bulkActions.deleteConfirm', {
+        count: selectedTaskIds.size,
+        defaultValue: `Are you sure you want to delete ${selectedTaskIds.size} task(s)? This action cannot be undone.`,
+      })
+    );
+    if (!confirmed) return;
+
+    await Promise.allSettled(
+      Array.from(selectedTaskIds).map(id => tasksApi.delete(id))
+    );
+    clearSelection();
+    handleRefresh();
+  }, [selectedTaskIds, clearSelection, handleRefresh, t]);
+
+  const handleBulkStatusChange = useCallback(async (status: TaskStatus) => {
+    if (selectedTaskIds.size === 0) return;
+
+    await Promise.allSettled(
+      Array.from(selectedTaskIds).map(id =>
+        tasksApi.update(id, {
+          title: null,
+          description: null,
+          status,
+          parent_workspace_id: null,
+          image_ids: null,
+        })
+      )
+    );
+    handleRefresh();
+  }, [selectedTaskIds, handleRefresh]);
 
   const handleAttemptCreated = useCallback(
     (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => {
@@ -304,6 +362,17 @@ export function Dashboard() {
 
     return result;
   }, [tasksByProject, statusFilters, hasSearch, normalizedSearch]);
+
+  // Bulk selection helpers (depend on filteredTasksByProject)
+  const selectAllVisible = useCallback(() => {
+    const allVisibleIds = Object.values(filteredTasksByProject).flat().map(t => t.id);
+    setSelectedTaskIds(new Set(allVisibleIds));
+  }, [filteredTasksByProject]);
+
+  const isAllSelected = useMemo(() => {
+    const allVisibleIds = Object.values(filteredTasksByProject).flat().map(t => t.id);
+    return allVisibleIds.length > 0 && allVisibleIds.every(id => selectedTaskIds.has(id));
+  }, [filteredTasksByProject, selectedTaskIds]);
 
   // Get projects to display - show all projects, but only show projects with matching tasks when searching
   const visibleProjects = useMemo(() => {
@@ -409,6 +478,47 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Bulk Actions Toolbar */}
+      {selectedTaskIds.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-primary/10 border-b shrink-0">
+          <span className="text-sm font-medium">
+            {selectedTaskIds.size} {selectedTaskIds.size === 1 ? 'task' : 'tasks'} selected
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={isAllSelected ? clearSelection : selectAllVisible}
+          >
+            {isAllSelected ? 'Clear' : 'Select All'}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                Change Status
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              {(['todo', 'inprogress', 'inreview', 'done', 'cancelled'] as TaskStatus[]).map((status) => (
+                <DropdownMenuItem
+                  key={status}
+                  onClick={() => handleBulkStatusChange(status)}
+                  className="p-0"
+                >
+                  <StatusBadge status={status} size="sm" />
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </Button>
+          <Button variant="ghost" size="sm" onClick={clearSelection}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
+
       {/* Project sections */}
       <div className="flex-1 overflow-y-auto p-4">
         {visibleProjects.length === 0 ? (
@@ -441,6 +551,8 @@ export function Dashboard() {
               onAttemptCreated={handleAttemptCreated}
               onRefresh={handleRefresh}
               defaultExpanded={true}
+              selectedTaskIds={selectedTaskIds}
+              onToggleTaskSelection={toggleTaskSelection}
             />
           ))
         )}

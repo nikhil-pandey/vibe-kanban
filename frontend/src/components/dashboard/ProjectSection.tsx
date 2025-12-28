@@ -40,6 +40,9 @@ interface ProjectSectionProps {
   onAttemptCreated?: (task: TaskWithAttemptStatusAndProject, attempt: Workspace) => void;
   onRefresh?: () => void;
   defaultExpanded?: boolean;
+  // Bulk selection props
+  selectedTaskIds: Set<string>;
+  onToggleTaskSelection: (taskId: string) => void;
 }
 
 export function ProjectSection({
@@ -52,6 +55,8 @@ export function ProjectSection({
   onAttemptCreated,
   onRefresh,
   defaultExpanded = true,
+  selectedTaskIds,
+  onToggleTaskSelection,
 }: ProjectSectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [error, setError] = useState<string | null>(null);
@@ -279,6 +284,8 @@ export function ProjectSection({
             onSelectTask={onSelectTask}
             onAttemptCreated={onAttemptCreated}
             onRefresh={onRefresh}
+            selectedTaskIds={selectedTaskIds}
+            onToggleTaskSelection={onToggleTaskSelection}
           />
         </div>
       )}
