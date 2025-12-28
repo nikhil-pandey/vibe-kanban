@@ -1744,7 +1744,7 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Merge the changes for a completed task attempt into its target branch. Provide repo_id and attempt_id, or set latest=true to merge the newest attempt (uses the active workspace context when available). Set auto_rebase=false to skip rebasing onto the target branch before merging (default: true)."
+        description = "Merge the changes for a completed task attempt into its target branch. Provide repo_id and attempt_id, or set latest=true to merge the newest attempt (uses the active workspace context when available). Set auto_rebase=false to skip rebasing onto the target branch before merging (default uses user config)."
     )]
     async fn merge_task_attempt(
         &self,
@@ -1767,7 +1767,6 @@ impl TaskServer {
         };
 
         let url = self.url(&format!("/api/task-attempts/{}/merge", attempt_id));
-        let auto_rebase = auto_rebase.unwrap_or(true);
         match self
             .send_json::<serde_json::Value>(self.client.post(&url).json(&serde_json::json!({
                 "repo_id": repo_id,

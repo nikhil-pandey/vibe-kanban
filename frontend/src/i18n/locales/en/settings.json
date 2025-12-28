@@ -139,6 +139,10 @@
           "helper": "Template for commit messages when merging task changes.",
           "placeholders": "Available: {title}, {short_id}, {id}, {project}",
           "preview": "Preview:"
+        },
+        "autoRebase": {
+          "label": "Auto rebase other attempts after merge",
+          "helper": "When enabled, merging an attempt automatically rebases other ready attempts in the project onto their target branches."
         }
       },
       "pullRequests": {

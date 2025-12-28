@@ -139,6 +139,10 @@
           "helper": "合并任务更改时的提交消息模板。",
           "placeholders": "可用: {title}, {short_id}, {id}, {project}",
           "preview": "预览："
+        },
+        "autoRebase": {
+          "label": "合并后自动变基其他尝试",
+          "helper": "启用后，合并一个尝试时会自动将项目中其他已准备好的尝试变基到其目标分支。"
         }
       },
       "pullRequests": {

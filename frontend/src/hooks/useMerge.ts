@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { attemptsApi } from '@/lib/api';
 import { repoBranchKeys } from './useRepoBranches';
+import { useUserSystem } from '@/components/ConfigProvider';
 
 type MergeParams = {
   repoId: string;
@@ -12,13 +13,14 @@ export function useMerge(
   onError?: (err: unknown) => void
 ) {
   const queryClient = useQueryClient();
+  const { config } = useUserSystem();
 
   return useMutation<void, unknown, MergeParams>({
     mutationFn: (params: MergeParams) => {
       if (!attemptId) return Promise.resolve();
       return attemptsApi.merge(attemptId, {
         repo_id: params.repoId,
-        auto_rebase: null,
+        auto_rebase: config?.git_auto_rebase_ready_attempts ?? null,
       });
     },
     onSuccess: () => {

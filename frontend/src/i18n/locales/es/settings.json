@@ -139,6 +139,10 @@
           "helper": "Plantilla para mensajes de commit al fusionar cambios de tareas.",
           "placeholders": "Disponible: {title}, {short_id}, {id}, {project}",
           "preview": "Vista previa:"
+        },
+        "autoRebase": {
+          "label": "Rebase automático de otros intentos tras fusionar",
+          "helper": "Cuando está activado, al fusionar un intento se hace rebase automáticamente de otros intentos listos en el proyecto sobre sus ramas objetivo."
         }
       },
       "pullRequests": {

@@ -139,6 +139,10 @@
           "helper": "작업 변경사항 병합 시 커밋 메시지 템플릿.",
           "placeholders": "사용 가능: {title}, {short_id}, {id}, {project}",
           "preview": "미리보기:"
+        },
+        "autoRebase": {
+          "label": "병합 후 다른 시도 자동 리베이스",
+          "helper": "활성화하면 시도를 병합할 때 프로젝트의 준비된 다른 시도를 자동으로 대상 브랜치에 리베이스합니다."
         }
       },
       "pullRequests": {

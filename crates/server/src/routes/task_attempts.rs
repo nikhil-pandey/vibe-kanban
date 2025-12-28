@@ -514,6 +514,13 @@ pub async fn merge_task_attempt(
 ) -> Result<ResponseJson<ApiResponse<(), GitOperationError>>, ApiError> {
     let pool = &deployment.db().pool;
 
+    let config = deployment.config().read().await;
+    let auto_rebase_config_enabled = config.git_auto_rebase_ready_attempts;
+    let commit_message_template = config.commit_message_template.clone();
+    drop(config);
+
+    let auto_rebase_preference = request.auto_rebase;
+
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, request.repo_id)
             .await?
@@ -530,7 +537,10 @@ pub async fn merge_task_attempt(
     let workspace_path = Path::new(&container_ref);
     let worktree_path = workspace_path.join(&repo.name);
 
-    if request.auto_rebase.unwrap_or(false) {
+    let should_rebase_before_merge =
+        auto_rebase_preference.unwrap_or(auto_rebase_config_enabled);
+
+    if should_rebase_before_merge {
         let rebase_response = perform_rebase_for_attempt(
             &deployment,
             &workspace,
@@ -559,10 +569,8 @@ pub async fn merge_task_attempt(
         .await?
         .ok_or(ApiError::Workspace(WorkspaceError::ProjectNotFound))?;
 
-    // Get commit message template from config
-    let config = deployment.config().read().await;
     let mut commit_message = format_commit_message(
-        &config.commit_message_template,
+        &commit_message_template,
         &task.title,
         &task.id,
         &project.name,
@@ -619,6 +627,33 @@ pub async fn merge_task_attempt(
         }
     }
 
+    let should_auto_rebase_other_attempts =
+        auto_rebase_config_enabled && auto_rebase_preference.unwrap_or(true);
+
+    if should_auto_rebase_other_attempts {
+        let deployment_clone = deployment.clone();
+        let repo_clone = repo.clone();
+        let project_id = task.project_id;
+        let merged_workspace_id = workspace.id;
+
+        tokio::spawn(async move {
+            if let Err(err) = auto_rebase_ready_attempts_for_project(
+                deployment_clone,
+                project_id,
+                repo_clone,
+                merged_workspace_id,
+            )
+            .await
+            {
+                tracing::warn!(
+                    ?err,
+                    workspace_id = ?merged_workspace_id,
+                    "Auto rebase of ready attempts failed"
+                );
+            }
+        });
+    }
+
     // Try broadcast update to other users in organization
     if let Ok(publisher) = deployment.share_publisher() {
         if let Err(err) = publisher.update_shared_task_by_id(task.id).await {
@@ -646,6 +681,183 @@ pub async fn merge_task_attempt(
         .await;
 
     Ok(ResponseJson(ApiResponse::success(())))
+}
+
+async fn auto_rebase_ready_attempts_for_project(
+    deployment: DeploymentImpl,
+    project_id: Uuid,
+    repo: Repo,
+    merged_workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    let pool = &deployment.db().pool;
+
+    let candidates = sqlx::query!(
+        r#"SELECT
+            w.id as "id!: Uuid",
+            w.task_id as "task_id!: Uuid",
+            w.container_ref,
+            w.branch,
+            w.agent_working_dir,
+            w.setup_completed_at as "setup_completed_at: DateTime<Utc>",
+            w.created_at as "created_at!: DateTime<Utc>",
+            w.updated_at as "updated_at!: DateTime<Utc>",
+            wr.id as "workspace_repo_id!: Uuid",
+            wr.target_branch,
+            wr.created_at as "workspace_repo_created_at!: DateTime<Utc>",
+            wr.updated_at as "workspace_repo_updated_at!: DateTime<Utc>",
+            t.status as "task_status!: TaskStatus"
+        FROM workspaces w
+        JOIN tasks t ON w.task_id = t.id
+        JOIN workspace_repos wr ON wr.workspace_id = w.id
+        WHERE t.project_id = $1 AND wr.repo_id = $2 AND w.id != $3
+        ORDER BY w.created_at DESC"#,
+        project_id,
+        repo.id,
+        merged_workspace_id,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for row in candidates {
+        if matches!(row.task_status, TaskStatus::Done | TaskStatus::Cancelled) {
+            tracing::debug!(
+                workspace_id = ?row.id,
+                "Skipping auto rebase for completed/cancelled task"
+            );
+            continue;
+        }
+
+        if row.setup_completed_at.is_none() {
+            tracing::debug!(
+                workspace_id = ?row.id,
+                "Skipping auto rebase because setup is not completed"
+            );
+            continue;
+        }
+
+        let has_running = ExecutionProcess::has_running_non_dev_server_processes_for_workspace(
+            pool,
+            row.id,
+        )
+        .await?;
+        if has_running {
+            tracing::info!(
+                workspace_id = ?row.id,
+                "Skipping auto rebase because an execution is running"
+            );
+            continue;
+        }
+
+        if !ExecutionProcess::find_running_dev_servers_by_workspace(pool, row.id)
+            .await?
+            .is_empty()
+        {
+            tracing::info!(
+                workspace_id = ?row.id,
+                "Skipping auto rebase because a dev server is running"
+            );
+            continue;
+        }
+
+        let workspace = Workspace {
+            id: row.id,
+            task_id: row.task_id,
+            container_ref: row.container_ref,
+            branch: row.branch,
+            agent_working_dir: row.agent_working_dir,
+            setup_completed_at: row.setup_completed_at,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
+
+        let workspace_repo = WorkspaceRepo {
+            id: row.workspace_repo_id,
+            workspace_id: row.id,
+            repo_id: repo.id,
+            target_branch: row.target_branch,
+            created_at: row.workspace_repo_created_at,
+            updated_at: row.workspace_repo_updated_at,
+        };
+
+        let container_ref = match deployment.container().ensure_container_exists(&workspace).await {
+            Ok(path) => path,
+            Err(err) => {
+                tracing::warn!(
+                    workspace_id = ?workspace.id,
+                    ?err,
+                    "Skipping auto rebase; failed to ensure container"
+                );
+                continue;
+            }
+        };
+
+        let worktree_path = Path::new(&container_ref).join(&repo.name);
+
+        if deployment
+            .git()
+            .is_rebase_in_progress(&worktree_path)
+            .unwrap_or(false)
+        {
+            tracing::info!(
+                workspace_id = ?workspace.id,
+                "Skipping auto rebase; rebase already in progress"
+            );
+            continue;
+        }
+
+        if let Ok((uncommitted_count, _)) =
+            deployment.git().get_worktree_change_counts(&worktree_path)
+        {
+            if uncommitted_count > 0 {
+                tracing::info!(
+                    workspace_id = ?workspace.id,
+                    "Skipping auto rebase; uncommitted changes present"
+                );
+                continue;
+            }
+        }
+
+        match perform_rebase_for_attempt(
+            &deployment,
+            &workspace,
+            &repo,
+            &workspace_repo,
+            &RebaseTaskAttemptRequest {
+                repo_id: repo.id,
+                old_base_branch: None,
+                new_base_branch: None,
+            },
+        )
+        .await
+        {
+            Ok(resp) if resp.is_success() => {
+                tracing::info!(
+                    workspace_id = ?workspace.id,
+                    branch = %workspace.branch,
+                    target_branch = %workspace_repo.target_branch,
+                    "Auto-rebased attempt after merge"
+                );
+            }
+            Ok(resp) => {
+                tracing::warn!(
+                    workspace_id = ?workspace.id,
+                    branch = %workspace.branch,
+                    message = resp.message().unwrap_or("Auto rebase failed"),
+                    "Auto rebase skipped"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    workspace_id = ?workspace.id,
+                    branch = %workspace.branch,
+                    ?err,
+                    "Auto rebase encountered an error"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn push_task_attempt_branch(

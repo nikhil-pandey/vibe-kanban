@@ -496,6 +496,23 @@ export function GeneralSettings() {
               </p>
             )}
           </div>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="git-auto-rebase-attempts"
+              checked={draft?.git_auto_rebase_ready_attempts ?? false}
+              onCheckedChange={(checked: boolean) =>
+                updateDraft({ git_auto_rebase_ready_attempts: checked })
+              }
+            />
+            <div className="space-y-0.5">
+              <Label htmlFor="git-auto-rebase-attempts" className="cursor-pointer">
+                {t('settings.general.git.autoRebase.label')}
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                {t('settings.general.git.autoRebase.helper')}
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
