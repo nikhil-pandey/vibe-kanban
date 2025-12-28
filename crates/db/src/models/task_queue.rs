@@ -288,7 +288,10 @@ impl TaskQueueEntry {
     ) -> Result<(), sqlx::Error> {
         let now = Utc::now();
         let status_str = status.to_string();
-        let completed_at = if matches!(status, QueueEntryStatus::Completed | QueueEntryStatus::Failed | QueueEntryStatus::Cancelled) {
+        let completed_at = if matches!(
+            status,
+            QueueEntryStatus::Completed | QueueEntryStatus::Failed | QueueEntryStatus::Cancelled
+        ) {
             Some(now)
         } else {
             None
@@ -489,10 +492,7 @@ impl TaskQueueEntry {
     }
 
     /// Clean up old completed/failed/cancelled entries
-    pub async fn cleanup_old(
-        pool: &SqlitePool,
-        days: i32,
-    ) -> Result<u64, sqlx::Error> {
+    pub async fn cleanup_old(pool: &SqlitePool, days: i32) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!(
             r#"DELETE FROM task_queue
                WHERE status IN ('completed', 'failed', 'cancelled')

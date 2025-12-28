@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use db::{
     DBService,
-    models::task_queue::{CreateTaskQueueEntry, QueueDepth, QueueEntryStatus, QueuePosition, TaskQueueEntry},
+    models::task_queue::{
+        CreateTaskQueueEntry, QueueDepth, QueueEntryStatus, QueuePosition, TaskQueueEntry,
+    },
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -85,7 +87,9 @@ impl TaskQueueService {
         priority: Option<i32>,
     ) -> Result<TaskQueueEntry, TaskQueueError> {
         // Check if session already has a pending entry
-        if let Some(_existing) = TaskQueueEntry::find_pending_for_session(&self.db.pool, session_id).await? {
+        if let Some(_existing) =
+            TaskQueueEntry::find_pending_for_session(&self.db.pool, session_id).await?
+        {
             return Err(TaskQueueError::AlreadyQueued);
         }
 
@@ -119,7 +123,11 @@ impl TaskQueueService {
             Some(e) => {
                 let cancelled = TaskQueueEntry::cancel(&self.db.pool, e.id).await?;
                 if cancelled {
-                    tracing::info!("Queue entry cancelled: entry_id={}, session_id={}", e.id, session_id);
+                    tracing::info!(
+                        "Queue entry cancelled: entry_id={}, session_id={}",
+                        e.id,
+                        session_id
+                    );
                 }
                 Ok(cancelled)
             }
@@ -267,7 +275,10 @@ impl TaskQueueService {
     pub async fn reset_orphaned_processing(&self) -> Result<u64, TaskQueueError> {
         let count = TaskQueueEntry::reset_processing_to_pending(&self.db.pool).await?;
         if count > 0 {
-            tracing::info!("Reset {} orphaned processing queue entries to pending", count);
+            tracing::info!(
+                "Reset {} orphaned processing queue entries to pending",
+                count
+            );
         }
         Ok(count)
     }

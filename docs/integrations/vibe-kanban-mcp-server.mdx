@@ -80,10 +80,10 @@ The Vibe Kanban MCP server provides the following tools for managing projects, t
 |------|---------|-------------------|-------------------|---------|
 | `start_workspace_session` | Start working on a single task with a coding agent | `task_id`<br/>`executor`<br/>`repos[].base_branch`<br/>`repos[].repo_id` | `variant` | Workspace/attempt ID and confirmation |
 | `start_workspace_sessions` | Start working on many tasks with coding agents | `sessions[].task_id`<br/>`sessions[].executor`<br/>`sessions[].repos[].base_branch`<br/>`sessions[].repos[].repo_id` | `sessions[].variant` | Workspace/attempt IDs and any failures |
-| `get_attempt_diff` | Fetch the code diff for an attempt (falls back to the newest attempt when `latest=true`, using the current task context when available) | `attempt_id` or `latest=true` | `include_stats` (additions/deletions totals) | Attempt metadata and per-repo diffs (paths are prefixed by repo name); optional aggregated stats |
+| `get_attempt_diff` | Fetch the code diff for an attempt (requires `attempt_id` or `latest=true` with `repo_id` inside an active task context) | `attempt_id` or `repo_id` + `latest=true` | `include_stats` (additions/deletions totals) | Attempt metadata and per-repo diffs (paths are prefixed by repo name); optional aggregated stats |
 | `merge_task_attempt` | Merge a completed attempt into its target branch | `repo_id`<br/>`attempt_id` (or `latest=true`) | None | `{ attempt_id, repo_id, merged }` on success |
 
-When calling `get_attempt_diff`, omit `attempt_id` and set `latest` to `true` to auto-resolve the newest attempt for the current task (or the most recent attempt overall when no task context is present).
+When calling `get_attempt_diff`, omit `attempt_id` and set `latest` to `true` **with `repo_id`** to auto-resolve the newest attempt for the current task. Without a workspace context or repo, the tool returns a validation error instead of falling back to an unrelated task.
 
 When calling `merge_task_attempt`, pass a `repo_id`. If you are inside a workspace context with exactly one repo, `repo_id` is auto-resolved; with multiple repos you must choose explicitly. Use `latest=true` to merge the newest attempt for the active task when `attempt_id` is omitted.
 

@@ -151,7 +151,11 @@ impl QueueProcessor {
 
         if let Some(agent_limit) = concurrency_config.agent_limits.get(&entry.executor_type) {
             if let ConcurrencyLimit::Limited(limit) = agent_limit {
-                let current = stats.by_executor.get(&entry.executor_type).copied().unwrap_or(0);
+                let current = stats
+                    .by_executor
+                    .get(&entry.executor_type)
+                    .copied()
+                    .unwrap_or(0);
                 if current >= *limit {
                     tracing::debug!(
                         "Queue processor: agent limit reached for {} ({}/{}), returning to queue",
@@ -183,7 +187,9 @@ impl QueueProcessor {
             }
             Err(e) => {
                 let error_msg = format!("{}", e);
-                self.task_queue.fail(entry.id, Some(error_msg.clone())).await?;
+                self.task_queue
+                    .fail(entry.id, Some(error_msg.clone()))
+                    .await?;
                 tracing::error!(
                     "Queue processor: failed to process entry {}: {}",
                     entry.id,

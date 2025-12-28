@@ -504,8 +504,7 @@ async fn get_concurrency_stats(
     let stats = ExecutionProcess::get_concurrency_stats(&deployment.db().pool).await?;
     let config = deployment.config().read().await.concurrency.clone();
 
-    Ok(ResponseJson(ApiResponse::success(ConcurrencyStatsResponse {
-        stats,
-        config,
-    })))
+    Ok(ResponseJson(ApiResponse::success(
+        ConcurrencyStatsResponse { stats, config },
+    )))
 }

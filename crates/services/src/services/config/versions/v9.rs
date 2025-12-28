@@ -30,7 +30,10 @@ pub enum ConcurrencyLimit {
     /// A specific numeric limit (must be >= 1)
     Limited(u32),
     /// Unlimited concurrency (represented as null in JSON)
-    #[serde(serialize_with = "serialize_unlimited", deserialize_with = "deserialize_unlimited")]
+    #[serde(
+        serialize_with = "serialize_unlimited",
+        deserialize_with = "deserialize_unlimited"
+    )]
     Unlimited,
 }
 
@@ -135,7 +138,9 @@ impl ConcurrencyConfig {
     /// Get the effective limit for a specific agent
     pub fn effective_limit_for_agent(&self, agent: &BaseCodingAgent) -> &ConcurrencyLimit {
         let agent_name = agent.to_string();
-        self.agent_limits.get(&agent_name).unwrap_or(&self.global_limit)
+        self.agent_limits
+            .get(&agent_name)
+            .unwrap_or(&self.global_limit)
     }
 }
 

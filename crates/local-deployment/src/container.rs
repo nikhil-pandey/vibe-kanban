@@ -1430,11 +1430,12 @@ impl ContainerService for LocalContainerService {
                 .unwrap_or_else(|| "Unknown".to_string());
 
             // Get agent session ID for conversation continuity
-            let agent_session_id = CodingAgentTurn::find_by_execution_process_id(&self.db.pool, process.id)
-                .await
-                .ok()
-                .flatten()
-                .and_then(|turn| turn.agent_session_id);
+            let agent_session_id =
+                CodingAgentTurn::find_by_execution_process_id(&self.db.pool, process.id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .and_then(|turn| turn.agent_session_id);
 
             // Serialize executor action
             let executor_action_json = match process.executor_action() {
@@ -1506,18 +1507,21 @@ impl ContainerService for LocalContainerService {
 
         for entry in interrupted {
             // Check if session and workspace still exist
-            let session = match db::models::session::Session::find_by_id(&self.db.pool, entry.session_id).await? {
-                Some(s) => s,
-                None => {
-                    tracing::warn!(
-                        "Session {} not found for interrupted execution {}, marking as resumed",
-                        entry.session_id,
-                        entry.id
-                    );
-                    InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
-                    continue;
-                }
-            };
+            let session =
+                match db::models::session::Session::find_by_id(&self.db.pool, entry.session_id)
+                    .await?
+                {
+                    Some(s) => s,
+                    None => {
+                        tracing::warn!(
+                            "Session {} not found for interrupted execution {}, marking as resumed",
+                            entry.session_id,
+                            entry.id
+                        );
+                        InterruptedExecution::mark_resumed(&self.db.pool, entry.id).await?;
+                        continue;
+                    }
+                };
 
             let workspace = match Workspace::find_by_id(&self.db.pool, entry.workspace_id).await? {
                 Some(w) => w,
@@ -1546,7 +1550,8 @@ impl ContainerService for LocalContainerService {
             };
 
             // Parse the original action to get executor_profile_id and working_dir
-            let original_action: ExecutorAction = match serde_json::from_str(&entry.executor_action) {
+            let original_action: ExecutorAction = match serde_json::from_str(&entry.executor_action)
+            {
                 Ok(a) => a,
                 Err(e) => {
                     tracing::warn!(

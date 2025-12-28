@@ -105,9 +105,7 @@ pub struct CreateFollowUpAttempt {
 #[ts(export)]
 pub enum FollowUpResponse {
     /// Execution started immediately
-    Started {
-        execution_process: ExecutionProcess,
-    },
+    Started { execution_process: ExecutionProcess },
     /// Task queued due to concurrency limit
     Queued {
         queue_entry: TaskQueueEntry,
@@ -188,7 +186,8 @@ pub async fn follow_up(
     let queue_enabled = config.concurrency.queue.enabled;
     drop(config);
 
-    let concurrency_result = check_concurrency_limits(&deployment, &executor_profile_id.executor).await;
+    let concurrency_result =
+        check_concurrency_limits(&deployment, &executor_profile_id.executor).await;
 
     // Get parent task
     let task = workspace
@@ -298,9 +297,9 @@ pub async fn follow_up(
                 );
             }
 
-            Ok(ResponseJson(ApiResponse::success(FollowUpResponse::Started {
-                execution_process,
-            })))
+            Ok(ResponseJson(ApiResponse::success(
+                FollowUpResponse::Started { execution_process },
+            )))
         }
         Err(ContainerError::GlobalConcurrencyLimitReached { .. })
         | Err(ContainerError::AgentConcurrencyLimitReached { .. })
@@ -345,10 +344,12 @@ pub async fn follow_up(
                 );
             }
 
-            Ok(ResponseJson(ApiResponse::success(FollowUpResponse::Queued {
-                queue_entry,
-                position,
-            })))
+            Ok(ResponseJson(ApiResponse::success(
+                FollowUpResponse::Queued {
+                    queue_entry,
+                    position,
+                },
+            )))
         }
         Err(e) => {
             // Either queue disabled or different error - propagate
